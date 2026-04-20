@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Raw Source template folders mirrored for structure/reference.
+    "src/base-components/**",
+    "src/layouts/simple-menu/**",
+    "src/layouts/top-menu/**",
+    "src/layouts/side-menu/Main.jsx",
+    "src/layouts/side-menu/index.js",
   ]),
 ]);
 

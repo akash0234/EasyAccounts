@@ -6,10 +6,13 @@ import {
   ledgerAccounts,
   ledgerEntries,
   financialYears,
-  customers,
-  vendors,
+  stockMovements,
+  facilityStock,
+  products,
 } from "@/db/schema";
 import { invoiceSchema } from "@/lib/validations";
+import { generateCode } from "@/lib/code-generator";
+import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
 import { eq, and, sql } from "drizzle-orm";
 
@@ -51,7 +54,15 @@ export async function POST(req: NextRequest) {
   }
 
   const companyId = session.user.companyId;
-  const { items, date, dueDate, notes, customerId, vendorId } = parsed.data;
+  const { items, date, dueDate, notes, customerId, vendorId, facilityId } = parsed.data;
+
+  // Facility is mandatory for both purchases and sales
+  if (!facilityId) {
+    return NextResponse.json(
+      { error: "Facility is required" },
+      { status: 400 }
+    );
+  }
 
   // Get active FY
   const activeFY = await db.query.financialYears.findFirst({
@@ -77,8 +88,9 @@ export async function POST(req: NextRequest) {
   const taxAmount = computedItems.reduce((sum, i) => sum + i.gstAmount, 0);
   const totalAmount = subtotal + taxAmount;
 
-  // Generate invoice number
-  const prefix = type === "SALES" ? "INV" : "BILL";
+  // Generate invoice code and number
+  const prefix = type === "SALES" ? CODE_PREFIX.SALES_INVOICE : CODE_PREFIX.PURCHASE_INVOICE;
+  const code = generateCode(prefix);
   const countResult = await db
     .select({ count: sql<number>`count(*)` })
     .from(invoices)
@@ -94,12 +106,14 @@ export async function POST(req: NextRequest) {
     .values({
       companyId,
       financialYearId: activeFY.id,
+      code,
       invoiceNumber,
       type,
       date: new Date(date),
       dueDate: dueDate ? new Date(dueDate) : null,
       customerId: customerId || null,
       vendorId: vendorId || null,
+      facilityId: facilityId || null,
       subtotal,
       taxAmount,
       totalAmount,
@@ -112,14 +126,114 @@ export async function POST(req: NextRequest) {
   await db.insert(invoiceItems).values(
     computedItems.map((item) => ({
       invoiceId: invoice.id,
+      productId: item.productId || null,
       description: item.description,
       quantity: item.quantity,
       rate: item.rate,
       amount: item.amount,
       gstPercent: item.gstPercent,
       gstAmount: item.gstAmount,
+      batchNo: item.batchNo || null,
+      slNo: item.slNo || null,
+      expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
     }))
   );
+
+  // Stock movements for PURCHASE items with productId
+  if (type === "PURCHASE") {
+    for (const item of computedItems) {
+      if (!item.productId) continue;
+
+      // Create stock movement
+      await db.insert(stockMovements).values({
+        companyId,
+        productId: item.productId,
+        facilityId: facilityId || null,
+        type: "IN",
+        quantity: item.quantity,
+        batchNo: item.batchNo || null,
+        referenceType: "INVOICE",
+        referenceId: invoice.id,
+      });
+
+      // Update product.currentStock
+      await db
+        .update(products)
+        .set({ currentStock: sql`${products.currentStock} + ${item.quantity}` })
+        .where(eq(products.id, item.productId));
+
+      // Upsert facility stock if facilityId provided
+      if (facilityId) {
+        const existing = await db.query.facilityStock.findFirst({
+          where: and(
+            eq(facilityStock.facilityId, facilityId),
+            eq(facilityStock.productId, item.productId)
+          ),
+        });
+
+        if (existing) {
+          await db
+            .update(facilityStock)
+            .set({
+              currentStock: sql`${facilityStock.currentStock} + ${item.quantity}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(facilityStock.id, existing.id));
+        } else {
+          await db.insert(facilityStock).values({
+            companyId,
+            facilityId,
+            productId: item.productId,
+            currentStock: item.quantity,
+          });
+        }
+      }
+    }
+  }
+
+  // Stock movements for SALES items with productId (stock OUT)
+  if (type === "SALES") {
+    for (const item of computedItems) {
+      if (!item.productId) continue;
+
+      await db.insert(stockMovements).values({
+        companyId,
+        productId: item.productId,
+        facilityId: facilityId || null,
+        type: "OUT",
+        quantity: item.quantity,
+        batchNo: item.batchNo || null,
+        referenceType: "INVOICE",
+        referenceId: invoice.id,
+      });
+
+      // Decrement product.currentStock
+      await db
+        .update(products)
+        .set({ currentStock: sql`${products.currentStock} - ${item.quantity}` })
+        .where(eq(products.id, item.productId));
+
+      // Decrement facility stock
+      if (facilityId) {
+        const existing = await db.query.facilityStock.findFirst({
+          where: and(
+            eq(facilityStock.facilityId, facilityId),
+            eq(facilityStock.productId, item.productId)
+          ),
+        });
+
+        if (existing) {
+          await db
+            .update(facilityStock)
+            .set({
+              currentStock: sql`${facilityStock.currentStock} - ${item.quantity}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(facilityStock.id, existing.id));
+        }
+      }
+    }
+  }
 
   // LEDGER ENTRIES — the core of ledger-first architecture
   if (type === "SALES" && customerId) {

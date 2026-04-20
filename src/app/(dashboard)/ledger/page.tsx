@@ -5,6 +5,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface LedgerAccount {
   id: string;
@@ -65,35 +74,67 @@ export default function LedgerPage() {
         </div>
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="text-left p-3 font-medium">Date</th>
-                    <th className="text-left p-3 font-medium">Description</th>
-                    <th className="text-left p-3 font-medium">Type</th>
-                    <th className="text-right p-3 font-medium">Debit</th>
-                    <th className="text-right p-3 font-medium">Credit</th>
-                    <th className="text-right p-3 font-medium">Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((e) => (
-                    <tr key={e.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3">{fmtDate(e.date)}</td>
-                      <td className="p-3">{e.description}</td>
-                      <td className="p-3"><span className="text-xs bg-gray-100 px-2 py-1 rounded">{e.referenceType || "-"}</span></td>
-                      <td className="p-3 text-right text-red-600">{e.debit > 0 ? fmt(e.debit) : "-"}</td>
-                      <td className="p-3 text-right text-green-600">{e.credit > 0 ? fmt(e.credit) : "-"}</td>
-                      <td className="p-3 text-right font-medium">{fmt(e.balanceAfter)}</td>
-                    </tr>
-                  ))}
-                  {entries.length === 0 && (
-                    <tr><td colSpan={6} className="p-6 text-center text-gray-500">No entries yet</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <Table className="min-w-full table-fixed">
+              <colgroup>
+                <col className="w-[8rem]" />
+                <col />
+                <col className="w-[10rem]" />
+                <col className="w-[9rem]" />
+                <col className="w-[9rem]" />
+                <col className="w-[10rem]" />
+              </colgroup>
+              <TableHead>
+                <TableRow>
+                  <TableHeader className="rounded-l-md bg-rubick-primary text-white">
+                    Date
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">
+                    Description
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">
+                    Type
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">
+                    Debit
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">
+                    Credit
+                  </TableHeader>
+                  <TableHeader className="rounded-r-md bg-rubick-primary text-right text-white">
+                    Balance
+                  </TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {entries.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell className="whitespace-nowrap align-middle">
+                      {fmtDate(e.date)}
+                    </TableCell>
+                    <TableCell className="align-middle">{e.description}</TableCell>
+                    <TableCell className="align-middle">
+                      <Badge variant="secondary">{e.referenceType || "-"}</Badge>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-middle text-right text-rubick-danger">
+                      {e.debit > 0 ? fmt(e.debit) : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-middle text-right text-rubick-success">
+                      {e.credit > 0 ? fmt(e.credit) : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-middle text-right font-medium">
+                      {fmt(e.balanceAfter)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {entries.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-6 text-center text-slate-400">
+                      No entries yet
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
@@ -113,7 +154,7 @@ export default function LedgerPage() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm">{account.name}</CardTitle>
-                <span className="text-xs bg-gray-100 px-2 py-1 rounded">{account.type}</span>
+                <Badge variant="secondary">{account.type}</Badge>
               </div>
             </CardHeader>
             <CardContent>

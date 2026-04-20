@@ -1,11 +1,14 @@
 @import "tailwindcss";
 
+/* ================================
+   DESIGN TOKENS — existing (preserved)
+================================ */
 :root {
   --background: #ffffff;
   --foreground: #0a0a0a;
   --card: #ffffff;
   --card-foreground: #0a0a0a;
-  --primary: #1a56db;
+  --primary: #1e3a8a;
   --primary-foreground: #ffffff;
   --secondary: #f3f4f6;
   --secondary-foreground: #111827;
@@ -17,35 +20,410 @@
   --destructive-foreground: #ffffff;
   --border: #e5e7eb;
   --input: #e5e7eb;
-  --ring: #1a56db;
+  --ring: #1e3a8a;
   --radius: 0.5rem;
+
+  /* ================================
+     RUBICK COLOR TOKENS (RGB triplets — enable opacity modifiers)
+  ================================ */
+  --rubick-primary:        30 58 138;    /* blue-800  */
+  --rubick-secondary:      226 232 240;  /* slate-200 */
+  --rubick-success:        132 204 22;   /* lime-500  */
+  --rubick-info:           6 182 212;    /* cyan-500  */
+  --rubick-warning:        250 204 21;   /* yellow-400 */
+  --rubick-pending:        249 115 22;   /* orange-500 */
+  --rubick-danger:         220 38 38;    /* red-600   */
+  --rubick-light:          241 245 249;  /* slate-100 */
+  --rubick-dark:           30 41 59;     /* slate-800 */
+
+  /* Darkmode scale */
+  --rubick-darkmode-50:    87 103 132;
+  --rubick-darkmode-100:   74 90 121;
+  --rubick-darkmode-200:   65 81 114;
+  --rubick-darkmode-300:   53 69 103;
+  --rubick-darkmode-400:   48 61 93;
+  --rubick-darkmode-500:   41 53 82;
+  --rubick-darkmode-600:   40 51 78;
+  --rubick-darkmode-700:   35 45 69;
+  --rubick-darkmode-800:   27 37 59;
+  --rubick-darkmode-900:   15 23 42;
 }
 
+/* ================================
+   THEME VARIANTS (toggle via data-theme on <html>)
+================================ */
+[data-theme="1"] { --rubick-primary: 6 78 59;    --primary: #064e3b; }  /* emerald-900 */
+[data-theme="2"] { --rubick-primary: 30 27 75;   --primary: #1e1b4b; }  /* indigo-900-ish */
+[data-theme="3"] { --rubick-primary: 22 78 99;   --primary: #164e63; }  /* cyan-900 */
+[data-theme="4"] { --rubick-primary: 55 48 163;  --primary: #312e81; }  /* indigo-800 */
+
+/* ================================
+   DARK MODE
+================================ */
+.dark {
+  --background: rgb(27 37 59);
+  --foreground: rgb(226 232 240);
+  --card: rgb(35 45 69);
+  --card-foreground: rgb(226 232 240);
+  --muted: rgb(48 61 93);
+  --muted-foreground: rgb(148 163 184);
+  --border: rgba(255 255 255 / 0.08);
+  --input: rgb(53 69 103);
+  --rubick-primary: 29 78 216;  /* blue-700 */
+}
+
+/* ================================
+   TAILWIND V4 THEME REGISTRATION
+================================ */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
+  /* existing tokens */
+  --color-background:             var(--background);
+  --color-foreground:             var(--foreground);
+  --color-card:                   var(--card);
+  --color-card-foreground:        var(--card-foreground);
+  --color-primary:                var(--primary);
+  --color-primary-foreground:     var(--primary-foreground);
+  --color-secondary:              var(--secondary);
+  --color-secondary-foreground:   var(--secondary-foreground);
+  --color-muted:                  var(--muted);
+  --color-muted-foreground:       var(--muted-foreground);
+  --color-accent:                 var(--accent);
+  --color-accent-foreground:      var(--accent-foreground);
+  --color-destructive:            var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius: var(--radius);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-border:                 var(--border);
+  --color-input:                  var(--input);
+  --color-ring:                   var(--ring);
+  --radius:                       var(--radius);
+  --font-sans:                    var(--font-geist-sans);
+  --font-mono:                    var(--font-geist-mono);
+
+  /* Rubick semantic tokens */
+  --color-rubick-primary:         rgb(var(--rubick-primary));
+  --color-rubick-secondary:       rgb(var(--rubick-secondary));
+  --color-rubick-success:         rgb(var(--rubick-success));
+  --color-rubick-info:            rgb(var(--rubick-info));
+  --color-rubick-warning:         rgb(var(--rubick-warning));
+  --color-rubick-pending:         rgb(var(--rubick-pending));
+  --color-rubick-danger:          rgb(var(--rubick-danger));
+  --color-rubick-light:           rgb(var(--rubick-light));
+  --color-rubick-dark:            rgb(var(--rubick-dark));
+  --color-rubick-darkmode-600:    rgb(var(--rubick-darkmode-600));
+  --color-rubick-darkmode-700:    rgb(var(--rubick-darkmode-700));
+  --color-rubick-darkmode-800:    rgb(var(--rubick-darkmode-800));
 }
 
+/* ================================
+   BASE STYLES
+================================ */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  @apply antialiased overflow-x-hidden text-sm;
+}
+
+.dark body {
+  @apply text-slate-300;
+}
+
+/* ================================
+   RUBICK LAYOUT — content area
+================================ */
+.rubick-content {
+  border-radius: 30px;
+  padding-left: 22px;
+  padding-right: 22px;
+  padding-bottom: 2.5rem;
+  min-height: 100vh;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
+  @apply min-w-0 bg-slate-100 flex-1;
+}
+
+.rubick-content::before {
+  content: "";
+  @apply w-full h-px block;
+}
+
+.dark .rubick-content {
+  background-color: rgb(var(--rubick-darkmode-700));
+}
+
+/* ================================
+   RUBICK LAYOUT — top bar / header
+================================ */
+.rubick-top-bar {
+  min-height: 76px;
+  z-index: 51;
+  backdrop-filter: blur(16px);
+  @apply flex items-center gap-4 relative border-b border-slate-200/80 bg-white/80 px-4 md:px-6;
+}
+
+.dark .rubick-top-bar {
+  background-color: rgb(var(--rubick-darkmode-700));
+  @apply border-white/10;
+}
+
+/* ================================
+   SIDEBAR — active state with SVG curve decorators
+   The curved SVGs create the "punched out" round corner illusion
+   between the primary sidebar background and the slate-100 content area.
+================================ */
+.rubick-nav-active {
+  background-color: rgb(var(--rubick-light));
+  border-radius: 9999px;
+  position: relative;
+}
+
+/* Curve above active item */
+/* .rubick-nav-active::before {
+  content: "";
+  width: 30px;
+  height: 30px;
+  margin-top: -30px;
+  transform: rotate(90deg) scale(1.04);
+  background-size: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='259.51' height='259.52' viewBox='0 0 259.51 259.52'%3E%3Cpath d='M8659.507,423.965c-.167-2.608.05-5.319-.19-8.211-.084-1.012-.031-2.15-.118-3.12-.113-1.25-.1-2.682-.236-4.061-.172-1.722-.179-3.757-.365-5.394-.328-2.889-.478-5.857-.854-8.61-.509-3.714-.825-7.252-1.38-10.543-.934-5.535-2.009-11.312-3.189-16.692-.855-3.9-1.772-7.416-2.752-11.2-1.1-4.256-2.394-8.149-3.687-12.381-1.1-3.615-2.366-6.893-3.623-10.493-1.3-3.739-2.917-7.26-4.284-10.7-1.708-4.295-3.674-8.078-5.485-12.023-1.145-2.493-2.5-4.932-3.727-7.387-1.318-2.646-2.9-5.214-4.152-7.518-1.716-3.16-3.517-5.946-5.274-8.873-1.692-2.818-3.589-5.645-5.355-8.334-2.326-3.542-4.637-6.581-7.039-9.848-2.064-2.809-4.017-5.255-6.088-7.828-2.394-2.974-4.937-5.936-7.292-8.589-3.027-3.411-6.049-6.744-9.055-9.763-2.4-2.412-4.776-4.822-7.108-6.975-3-2.767-5.836-5.471-8.692-7.854-3.332-2.779-6.657-5.663-9.815-8.028-2.958-2.216-5.784-4.613-8.7-6.6-3.161-2.159-6.251-4.414-9.219-6.254-3.814-2.365-7.533-4.882-11.168-6.89-4.213-2.327-8.513-4.909-12.478-6.834-4.61-2.239-9.234-4.619-13.51-6.416-4.1-1.725-8.11-3.505-11.874-4.888-4.5-1.652-8.506-3.191-12.584-4.47-6.045-1.9-12.071-3.678-17.431-5-9.228-2.284-17.608-3.757-24.951-4.9-7.123-1.112-13.437-1.64-18.271-2.035l-2.405-.2c-1.638-.136-3.508-.237-4.633-.3a115.051,115.051,0,0,0-12.526-.227h259.51Z' transform='translate(-8399.997 -164.445)' fill='%23f1f5f9'/%3E%3C/svg%3E");
+  @apply absolute top-0 right-0 -mr-5;
+} */
+
+/* Curve below active item */
+/* .rubick-nav-active::after {
+  content: "";
+  width: 30px;
+  height: 30px;
+  margin-top: 50px;
+  transform: scale(1.04);
+  background-size: 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='259.51' height='259.52' viewBox='0 0 259.51 259.52'%3E%3Cpath d='M8659.507,423.965c-.167-2.608.05-5.319-.19-8.211-.084-1.012-.031-2.15-.118-3.12-.113-1.25-.1-2.682-.236-4.061-.172-1.722-.179-3.757-.365-5.394-.328-2.889-.478-5.857-.854-8.61-.509-3.714-.825-7.252-1.38-10.543-.934-5.535-2.009-11.312-3.189-16.692-.855-3.9-1.772-7.416-2.752-11.2-1.1-4.256-2.394-8.149-3.687-12.381-1.1-3.615-2.366-6.893-3.623-10.493-1.3-3.739-2.917-7.26-4.284-10.7-1.708-4.295-3.674-8.078-5.485-12.023-1.145-2.493-2.5-4.932-3.727-7.387-1.318-2.646-2.9-5.214-4.152-7.518-1.716-3.16-3.517-5.946-5.274-8.873-1.692-2.818-3.589-5.645-5.355-8.334-2.326-3.542-4.637-6.581-7.039-9.848-2.064-2.809-4.017-5.255-6.088-7.828-2.394-2.974-4.937-5.936-7.292-8.589-3.027-3.411-6.049-6.744-9.055-9.763-2.4-2.412-4.776-4.822-7.108-6.975-3-2.767-5.836-5.471-8.692-7.854-3.332-2.779-6.657-5.663-9.815-8.028-2.958-2.216-5.784-4.613-8.7-6.6-3.161-2.159-6.251-4.414-9.219-6.254-3.814-2.365-7.533-4.882-11.168-6.89-4.213-2.327-8.513-4.909-12.478-6.834-4.61-2.239-9.234-4.619-13.51-6.416-4.1-1.725-8.11-3.505-11.874-4.888-4.5-1.652-8.506-3.191-12.584-4.47-6.045-1.9-12.071-3.678-17.431-5-9.228-2.284-17.608-3.757-24.951-4.9-7.123-1.112-13.437-1.64-18.271-2.035l-2.405-.2c-1.638-.136-3.508-.237-4.633-.3a115.051,115.051,0,0,0-12.526-.227h259.51Z' transform='translate(-8399.997 -164.445)' fill='%23f1f5f9'/%3E%3C/svg%3E");
+  @apply absolute top-0 right-0 -mr-5;
+} */
+
+/* ================================
+   BOX — Rubick panel with soft shadow
+================================ */
+.box {
+  box-shadow: 0px 3px 20px rgba(0, 0, 0, 0.04);
+  @apply bg-white border border-transparent rounded-md relative;
+}
+
+.dark .box {
+  background-color: rgb(var(--rubick-darkmode-600));
+  @apply border-white/5;
+}
+
+/* ================================
+   TABLE REPORT — floating row style
+================================ */
+.table-report {
+  border-spacing: 0 10px;
+  padding: 0 6px;
+  @apply border-separate w-full text-sm;
+}
+
+.table-report th {
+  @apply border-b-0 text-left px-3 py-2 font-medium text-slate-500 text-xs uppercase tracking-wide;
+}
+
+.table-report td {
+  @apply bg-white border-b-0 px-3 py-3;
+  box-shadow: 20px 3px 20px rgba(0, 0, 0, 0.04);
+}
+
+.table-report td:first-child {
+  @apply rounded-l-md;
+}
+
+.table-report td:last-child {
+  @apply rounded-r-md;
+}
+
+.dark .table-report td {
+  background-color: rgb(var(--rubick-darkmode-600));
+}
+
+/* ================================
+   AUTH PAGES — decorative background
+================================ */
+.rubick-auth {
+  position: relative;
+  overflow: hidden;
+  @apply min-h-screen flex items-center justify-center;
+  background-color: rgb(var(--rubick-primary));
+}
+
+.rubick-auth::before {
+  content: "";
+  width: 57%;
+  border-radius: 100%;
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  margin-top: -28%;
+  margin-bottom: -15%;
+  margin-left: -13%;
+  transform: rotate(-4deg);
+  background-color: rgb(var(--rubick-primary) / 0.4);
+}
+
+.rubick-auth::after {
+  content: "";
+  width: 57%;
+  border-radius: 100%;
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  margin-top: -20%;
+  margin-bottom: -12%;
+  margin-left: -13%;
+  transform: rotate(-4deg);
+  background-color: rgb(var(--rubick-primary) / 0.7);
+}
+
+/* ================================
+   ANIMATIONS — sidebar entry
+================================ */
+@keyframes rubick-intro-menu {
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes rubick-intro-devider {
+  100% {
+    opacity: 1;
+  }
+}
+
+.rubick-shell {
+  min-height: 100vh;
+  position: relative;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at top left, rgba(96, 165, 250, 0.22), transparent 28rem),
+    linear-gradient(180deg, rgb(var(--rubick-primary)) 0%, rgb(23 37 84) 100%);
+}
+
+.rubick-shell::before,
+.rubick-shell::after {
+  content: "";
+  position: fixed;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 0;
+  background: rgba(255, 255, 255, 0.08);
+  filter: blur(8px);
+}
+
+.rubick-shell::before {
+  width: 18rem;
+  height: 18rem;
+  top: -5rem;
+  right: -4rem;
+}
+
+.rubick-shell::after {
+  width: 16rem;
+  height: 16rem;
+  bottom: -4rem;
+  left: -4rem;
+}
+
+.rubick-page {
+  @apply flex flex-col gap-6 py-6;
+}
+
+.rubick-eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.28em];
+}
+
+.rubick-command {
+  width: min(100%, 32rem);
+  height: 2.9rem;
+  @apply flex items-center gap-3 rounded-full border border-slate-200/80 bg-slate-50/90 px-4 shadow-sm;
+}
+
+.rubick-hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(191, 219, 254, 0.3), transparent 14rem),
+    linear-gradient(135deg, rgb(var(--rubick-primary)) 0%, rgb(37 99 235) 100%);
+  @apply rounded-[28px] px-6 py-7 text-white shadow-2xl shadow-blue-950/20 lg:px-8;
+}
+
+.rubick-hero::before {
+  content: "";
+  position: absolute;
+  width: 16rem;
+  height: 16rem;
+  right: -5rem;
+  top: -7rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rubick-hero-card {
+  @apply rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur-sm;
+}
+
+.rubick-stat-card {
+  position: relative;
+  overflow: hidden;
+  @apply rounded-2xl bg-white p-5;
+}
+
+.rubick-stat-card::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, rgb(var(--rubick-primary)), rgb(96 165 250));
+}
+
+.rubick-panel {
+  @apply rounded-2xl bg-white p-5 shadow-[0_12px_40px_rgba(15,23,42,0.08)];
+}
+
+.rubick-panel-muted {
+  @apply rounded-2xl border border-slate-200/70 bg-slate-50/80 p-4;
+}
+
+.rubick-progress {
+  @apply h-2 overflow-hidden rounded-full bg-slate-200;
+}
+
+.rubick-progress > span {
+  @apply block h-full rounded-full bg-rubick-primary;
+}
+
+.rubick-list {
+  @apply flex flex-col gap-3;
+}
+
+.rubick-list-item {
+  @apply flex items-center gap-3 rounded-2xl border border-slate-200/70 bg-slate-50/70 px-4 py-3;
+}
+
+.rubick-quick-link {
+  @apply flex items-center justify-between rounded-2xl border border-slate-200/70 bg-white px-4 py-4 text-left shadow-sm transition-transform duration-150 hover:-translate-y-0.5;
+}
+
+@media (max-width: 767px) {
+  .rubick-content {
+    border-radius: 26px 26px 0 0;
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 1.5rem;
+  }
+
+  .rubick-top-bar {
+    @apply px-3;
+  }
+
+  .rubick-page {
+    @apply py-4;
+  }
 }

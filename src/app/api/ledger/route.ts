@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { ledgerAccounts, ledgerEntries } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 // GET /api/ledger?accountId=xxx — get ledger entries for an account
 // GET /api/ledger — get all ledger accounts
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
         eq(ledgerEntries.companyId, companyId),
         eq(ledgerEntries.ledgerAccountId, accountId)
       ),
-      orderBy: [desc(ledgerEntries.date)],
+      orderBy: (e, { asc }) => [asc(e.date), asc(e.createdAt)],
     });
     return NextResponse.json(entries);
   }

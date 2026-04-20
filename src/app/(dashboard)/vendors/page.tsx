@@ -5,10 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Plus, Search, Trash2, Edit2, X } from "lucide-react";
 
 interface Vendor {
   id: string;
+  code: string | null;
   name: string;
   gstin: string | null;
   phone: string | null;
@@ -35,7 +44,23 @@ export default function VendorsPage() {
     if (Array.isArray(data)) setVendors(data);
   }
 
-  useEffect(() => { loadVendors(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeVendors() {
+      const res = await fetch("/api/vendors");
+      const data = await res.json();
+      if (!cancelled && Array.isArray(data)) {
+        setVendors(data);
+      }
+    }
+
+    void initializeVendors();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function resetForm() {
     setFormData({ name: "", gstin: "", phone: "", email: "", address: "", city: "", state: "", pincode: "", openingBalance: 0 });
@@ -113,40 +138,94 @@ export default function VendorsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left p-3 font-medium">Name</th>
-                  <th className="text-left p-3 font-medium">Phone</th>
-                  <th className="text-left p-3 font-medium">GSTIN</th>
-                  <th className="text-left p-3 font-medium">City</th>
-                  <th className="text-right p-3 font-medium">Balance</th>
-                  <th className="text-right p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((v) => (
-                  <tr key={v.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-medium">{v.name}</td>
-                    <td className="p-3 text-gray-600">{v.phone || "-"}</td>
-                    <td className="p-3 text-gray-600 text-xs">{v.gstin || "-"}</td>
-                    <td className="p-3 text-gray-600">{v.city || "-"}</td>
-                    <td className="p-3 text-right font-medium">
-                      {(v.ledgerAccount?.balance ?? v.openingBalance).toLocaleString("en-IN", { style: "currency", currency: "INR" })}
-                    </td>
-                    <td className="p-3 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(v)}><Edit2 className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(v.id)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="p-6 text-center text-gray-500">No vendors found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-full table-fixed">
+            <colgroup>
+              <col className="w-[7.5rem]" />
+              <col />
+              <col className="w-[9rem]" />
+              <col className="w-[11rem]" />
+              <col className="w-[8rem]" />
+              <col className="w-[11rem]" />
+              <col className="w-[7.5rem]" />
+            </colgroup>
+            <TableHead>
+              <TableRow>
+                <TableHeader className="rounded-l-md bg-rubick-primary text-white">
+                  Code
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  Name
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  Phone
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  GSTIN
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  City
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary !text-right text-white">
+                  Balance
+                </TableHeader>
+                <TableHeader className="rounded-r-md bg-rubick-primary text-right text-white">
+                  Actions
+                </TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filtered.map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell className="whitespace-nowrap align-middle font-mono text-xs text-slate-500">
+                    {v.code || "-"}
+                  </TableCell>
+                  <TableCell className="align-middle font-medium">
+                    {v.name}
+                  </TableCell>
+                  <TableCell className="align-middle text-slate-500">
+                    {v.phone || "-"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle text-xs text-slate-500">
+                    {v.gstin || "-"}
+                  </TableCell>
+                  <TableCell className="align-middle text-slate-500">
+                    {v.city || "-"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle text-right font-medium">
+                    {(v.ledgerAccount?.balance ?? v.openingBalance).toLocaleString(
+                      "en-IN",
+                      { style: "currency", currency: "INR" }
+                    )}
+                  </TableCell>
+                  <TableCell className="align-middle text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(v)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(v.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-rubick-danger" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-slate-400">
+                    No vendors found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

@@ -7,7 +7,6 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,39 +35,44 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">EasyAccounts</CardTitle>
-          <CardDescription>Sign in to your account</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="rubick-auth">
+      {/* Card sits above the decorative pseudo-elements */}
+      <div className="relative z-10 w-full max-w-sm mx-4">
+        <div className="box p-8">
+          <div className="text-center mb-6">
+            <div className="w-12 h-12 rounded-xl bg-rubick-primary/10 flex items-center justify-center mx-auto mb-3">
+              <span className="text-rubick-primary font-bold text-lg">EA</span>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800">EasyAccounts</h1>
+            <p className="text-sm text-slate-500 mt-1">Sign in to your account</p>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 rounded-md p-2 text-center">
+              <div className="text-sm text-rubick-danger bg-rubick-danger/10 rounded-md p-3 text-center">
                 {error}
               </div>
             )}
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" required autoFocus />
+              <Input id="email" name="email" type="email" required autoFocus placeholder="you@example.com" />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" required />
+              <Input id="password" name="password" type="password" required placeholder="••••••••" />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" className="w-full mt-2" disabled={loading}>
               {loading ? "Signing in..." : "Sign In"}
             </Button>
-            <p className="text-sm text-center text-gray-600">
+            <p className="text-sm text-center text-slate-500">
               Don&apos;t have an account?{" "}
-              <Link href="/register" className="text-primary hover:underline">
+              <Link href="/register" className="text-rubick-primary hover:underline font-medium">
                 Register
               </Link>
             </p>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

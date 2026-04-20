@@ -5,10 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Plus, Search, Trash2, Edit2, X } from "lucide-react";
 
 interface Customer {
   id: string;
+  code: string | null;
   name: string;
   gstin: string | null;
   phone: string | null;
@@ -37,7 +46,23 @@ export default function CustomersPage() {
     if (Array.isArray(data)) setCustomers(data);
   }
 
-  useEffect(() => { loadCustomers(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeCustomers() {
+      const res = await fetch("/api/customers");
+      const data = await res.json();
+      if (!cancelled && Array.isArray(data)) {
+        setCustomers(data);
+      }
+    }
+
+    void initializeCustomers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function resetForm() {
     setFormData({ name: "", gstin: "", phone: "", email: "", billingAddress: "", shippingAddress: "", city: "", state: "", pincode: "", creditLimit: 0, openingBalance: 0 });
@@ -153,44 +178,89 @@ export default function CustomersPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left p-3 font-medium">Name</th>
-                  <th className="text-left p-3 font-medium">Phone</th>
-                  <th className="text-left p-3 font-medium">GSTIN</th>
-                  <th className="text-left p-3 font-medium">City</th>
-                  <th className="text-right p-3 font-medium">Balance</th>
-                  <th className="text-right p-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c) => (
-                  <tr key={c.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-medium">{c.name}</td>
-                    <td className="p-3 text-gray-600">{c.phone || "-"}</td>
-                    <td className="p-3 text-gray-600 text-xs">{c.gstin || "-"}</td>
-                    <td className="p-3 text-gray-600">{c.city || "-"}</td>
-                    <td className="p-3 text-right font-medium">
-                      {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString("en-IN", { style: "currency", currency: "INR" })}
-                    </td>
-                    <td className="p-3 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(c)}>
+          <Table className="min-w-full table-fixed">
+           
+            <TableHead>
+              <TableRow>
+                <TableHeader className="rounded-l-md bg-rubick-primary text-white w-[7.5rem]">
+                  Code
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white w-[9rem]">
+                  Name
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white w-[11rem]">
+                  Phone
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white w-[8rem]">
+                  GSTIN
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white w-[8rem]">
+                  City
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary !text-right text-white w-[8rem]">
+                  Balance
+                </TableHeader>
+                <TableHeader className="rounded-r-md bg-rubick-primary !text-right text-white w-[7.5rem]">
+                  Actions
+                </TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filtered.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="whitespace-nowrap align-middle font-mono text-xs text-slate-500">
+                    {c.code || "-"}
+                  </TableCell>
+                  <TableCell className="align-middle font-medium">
+                    {c.name}
+                  </TableCell>
+                  <TableCell className="align-middle text-slate-500">
+                    {c.phone || "-"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle text-xs text-slate-500">
+                    {c.gstin || "-"}
+                  </TableCell>
+                  <TableCell className="align-middle text-slate-500">
+                    {c.city || "-"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle  !text-right font-medium">
+                    {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString(
+                      "en-IN",
+                      { style: "currency", currency: "INR" }
+                    )}
+                  </TableCell>
+                  <TableCell className="align-middle text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(c)}
+                      >
                         <Edit2 className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(c.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-rubick-danger" />
                       </Button>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="p-6 text-center text-gray-500">No customers found</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="py-6 text-center text-slate-400"
+                  >
+                    No customers found
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

@@ -68,12 +68,23 @@ export const vendorSchema = z.object({
   openingBalance: z.coerce.number().default(0),
 });
 
+// Facility
+export const facilitySchema = z.object({
+  name: z.string().min(1, "Name required"),
+  address: z.string().optional(),
+  isDefault: z.boolean().optional(),
+});
+
 // Invoice item
 export const invoiceItemSchema = z.object({
+  productId: z.string().optional(),
   description: z.string().min(1, "Description required"),
   quantity: z.coerce.number().min(0.01),
   rate: z.coerce.number().min(0),
   gstPercent: z.coerce.number().min(0).max(28).default(0),
+  batchNo: z.string().optional(),
+  slNo: z.string().optional(),
+  expiryDate: z.string().optional(),
 });
 
 // Invoice
@@ -82,25 +93,73 @@ export const invoiceSchema = z.object({
   dueDate: z.string().optional(),
   customerId: z.string().optional(),
   vendorId: z.string().optional(),
+  facilityId: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, "At least one item required"),
   notes: z.string().optional(),
 });
 
-// Payment
-export const paymentSchema = z.object({
-  date: z.string().min(1, "Date required"),
-  customerId: z.string().optional(),
-  vendorId: z.string().optional(),
-  amount: z.coerce.number().min(0.01, "Amount must be positive"),
-  method: z.enum(["CASH", "BANK", "UPI", "CHEQUE"]),
-  reference: z.string().optional(),
-  notes: z.string().optional(),
-  allocations: z
-    .array(
-      z.object({
-        invoiceId: z.string(),
-        amount: z.coerce.number().min(0.01),
-      })
-    )
-    .optional(),
+// Product
+export const productSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  description: z.string().optional(),
+  hsn: z.string().optional(),
+  sku: z.string().optional(),
+  unit: z.enum(["PCS", "KG", "LTR", "BOX", "MTR", "SET", "PAIR", "DOZEN", "STRIP", "BOTTLE", "TUBE", "VIAL"]).default("PCS"),
+  category: z.string().optional(),
+  gstPercent: z.coerce.number().min(0).max(28).default(0),
+  purchaseRate: z.coerce.number().min(0).default(0),
+  sellingRate: z.coerce.number().min(0).default(0),
+  openingStock: z.coerce.number().min(0).default(0),
+  reorderLevel: z.coerce.number().min(0).default(0),
+  imageUrl: z.string().optional(),
 });
+
+// Stock Movement
+export const stockMovementSchema = z.object({
+  productId: z.string().min(1, "Product required"),
+  type: z.enum(["IN", "OUT", "ADJUST"]),
+  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
+  referenceType: z.string().optional(),
+  referenceId: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// Payment
+export const paymentSchema = z
+  .object({
+    date: z.string().min(1, "Date required"),
+    customerId: z.string().optional(),
+    vendorId: z.string().optional(),
+    amount: z.coerce.number().min(0, "Amount cannot be negative"),
+    method: z.enum(["CASH", "BANK", "UPI", "CHEQUE"]),
+    reference: z.string().optional(),
+    notes: z.string().optional(),
+    allocations: z
+      .array(
+        z.object({
+          invoiceId: z.string(),
+          amount: z.coerce.number().min(0.01),
+        })
+      )
+      .optional(),
+    advanceAllocations: z
+      .array(
+        z.object({
+          paymentId: z.string().min(1),
+          invoiceId: z.string().min(1),
+          amount: z.coerce.number().min(0.01),
+        })
+      )
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasAdvanceAllocations =
+      data.advanceAllocations && data.advanceAllocations.length > 0;
+    if (data.amount === 0 && !hasAdvanceAllocations) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Amount must be greater than 0 unless using advance allocations",
+        path: ["amount"],
+      });
+    }
+  });

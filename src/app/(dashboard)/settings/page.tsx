@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useEffect, useState } from "react";
 
 interface FinancialYear {
@@ -30,10 +31,10 @@ export default function SettingsPage() {
         <Card>
           <CardHeader><CardTitle>Company Info</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div><span className="text-gray-500">Company:</span> {session?.user?.companyName}</div>
-            <div><span className="text-gray-500">User:</span> {session?.user?.name}</div>
-            <div><span className="text-gray-500">Email:</span> {session?.user?.email}</div>
-            <div><span className="text-gray-500">Role:</span> {session?.user?.role}</div>
+            <div><span className="text-slate-500">Company:</span> {session?.user?.companyName}</div>
+            <div><span className="text-slate-500">User:</span> {session?.user?.name}</div>
+            <div><span className="text-slate-500">Email:</span> {session?.user?.email}</div>
+            <div><span className="text-slate-500">Role:</span> {session?.user?.role}</div>
           </CardContent>
         </Card>
 
@@ -47,7 +48,7 @@ export default function SettingsPage() {
                   <span>
                     {new Date(fy.startDate).toLocaleDateString("en-IN")} - {new Date(fy.endDate).toLocaleDateString("en-IN")}
                   </span>
-                  {fy.isActive && <span className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded">Active</span>}
+                  {fy.isActive && <Badge variant="paid">Active</Badge>}
                 </div>
               ))}
             </div>

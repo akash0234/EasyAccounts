@@ -5,43 +5,108 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, X, Trash2 } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Plus, X, Trash2, Eye } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface Vendor { id: string; name: string; }
-interface InvoiceItem { description: string; quantity: number; rate: number; gstPercent: number; }
+interface Product { id: string; name: string; hsn?: string | null; unit: string; gstPercent: number; purchaseRate: number; sellingRate: number; currentStock: number; }
+interface Facility { id: string; name: string; code: string | null; }
+interface InvoiceItem { description: string; productId?: string; quantity: number; rate: number; gstPercent: number; batchNo: string; slNo: string; expiryDate: string; }
 interface Invoice {
-  id: string; invoiceNumber: string; date: string; totalAmount: number;
-  paidAmount: number; status: string; vendor?: { name: string } | null;
+  id: string; invoiceNumber: string; date: string; dueDate?: string | null;
+  subtotal: number; taxAmount: number; totalAmount: number;
+  paidAmount: number; status: string; notes?: string | null;
+  vendor?: { name: string; gstin?: string | null; phone?: string | null; address?: string | null; city?: string | null } | null;
+  items: { description: string; quantity: number; rate: number; amount: number; gstPercent: number; gstAmount: number; }[];
 }
 
-const emptyItem: InvoiceItem = { description: "", quantity: 1, rate: 0, gstPercent: 0 };
+const emptyItem: InvoiceItem = { description: "", productId: "", quantity: 1, rate: 0, gstPercent: 0, batchNo: "", slNo: "", expiryDate: "" };
 
 export default function PurchasesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [facilitiesList, setFacilitiesList] = useState<Facility[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [vendorId, setVendorId] = useState("");
+  const [facilityId, setFacilityId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<InvoiceItem[]>([{ ...emptyItem }]);
+  const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
   async function load() {
-    const [invRes, vendRes] = await Promise.all([
+    const [invRes, vendRes, prodRes, facRes] = await Promise.all([
       fetch("/api/invoices?type=PURCHASE"),
       fetch("/api/vendors"),
+      fetch("/api/products"),
+      fetch("/api/facilities"),
     ]);
-    const [invData, vendData] = await Promise.all([invRes.json(), vendRes.json()]);
+    const [invData, vendData, prodData, facData] = await Promise.all([invRes.json(), vendRes.json(), prodRes.json(), facRes.json()]);
     if (Array.isArray(invData)) setInvoices(invData);
     if (Array.isArray(vendData)) setVendors(vendData);
+    if (Array.isArray(prodData)) setProductsList(prodData);
+    if (Array.isArray(facData)) setFacilitiesList(facData);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializePurchases() {
+      const [invRes, vendRes, prodRes, facRes] = await Promise.all([
+        fetch("/api/invoices?type=PURCHASE"),
+        fetch("/api/vendors"),
+        fetch("/api/products"),
+        fetch("/api/facilities"),
+      ]);
+      const [invData, vendData, prodData, facData] = await Promise.all([invRes.json(), vendRes.json(), prodRes.json(), facRes.json()]);
+
+      if (cancelled) {
+        return;
+      }
+      if (Array.isArray(invData)) setInvoices(invData);
+      if (Array.isArray(vendData)) setVendors(vendData);
+      if (Array.isArray(prodData)) setProductsList(prodData);
+      if (Array.isArray(facData)) setFacilitiesList(facData);
+    }
+
+    void initializePurchases();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateItem(idx: number, field: keyof InvoiceItem, value: string | number) {
     const updated = [...items];
     updated[idx] = { ...updated[idx], [field]: value };
+    setItems(updated);
+  }
+
+  function selectProduct(idx: number, productId: string) {
+    const product = productsList.find((p) => p.id === productId);
+    const updated = [...items];
+    if (product) {
+      updated[idx] = {
+        ...updated[idx],
+        productId: product.id,
+        description: product.name + (product.hsn ? ` (HSN: ${product.hsn})` : ""),
+        rate: product.purchaseRate,
+        gstPercent: product.gstPercent,
+      };
+    } else {
+      updated[idx] = { ...updated[idx], productId: "", description: "", rate: 0, gstPercent: 0 };
+    }
     setItems(updated);
   }
 
@@ -58,14 +123,13 @@ export default function PurchasesPage() {
     const res = await fetch("/api/invoices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "PURCHASE", date, dueDate, vendorId, items, notes }),
+      body: JSON.stringify({ type: "PURCHASE", date, dueDate, vendorId, facilityId, items, notes }),
     });
     setLoading(false);
-    if (res.ok) { setShowForm(false); setItems([{ ...emptyItem }]); setVendorId(""); setNotes(""); load(); }
+    if (res.ok) { setShowForm(false); setItems([{ ...emptyItem }]); setVendorId(""); setFacilityId(""); setNotes(""); load(); }
   }
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
-  const statusColor = (s: string) => s === "PAID" ? "text-green-600 bg-green-50" : s === "PARTIAL" ? "text-yellow-600 bg-yellow-50" : "text-red-600 bg-red-50";
 
   return (
     <div>
@@ -82,12 +146,19 @@ export default function PurchasesPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <Label>Vendor *</Label>
                   <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={vendorId} onChange={(e) => setVendorId(e.target.value)} required>
                     <option value="">Select vendor</option>
                     {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label>Facility *</Label>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
+                    <option value="">Select facility</option>
+                    {facilitiesList.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
                 </div>
                 <div><Label>Date *</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
@@ -100,18 +171,33 @@ export default function PurchasesPage() {
                   <Label>Items</Label>
                   <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, { ...emptyItem }])}><Plus className="h-3 w-3 mr-1" /> Add Item</Button>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 overflow-x-auto">
                   {items.map((item, idx) => (
-                    <div key={idx} className="grid grid-cols-12 gap-2 items-end">
-                      <div className="col-span-4">
-                        {idx === 0 && <Label className="text-xs">Description</Label>}
-                        <Input value={item.description} onChange={(e) => updateItem(idx, "description", e.target.value)} required />
+                    <div key={idx} className="flex gap-2 items-end min-w-[900px]">
+                      <div className="w-[200px] shrink-0">
+                        {idx === 0 && <Label className="text-xs">Product</Label>}
+                        <select
+                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                          value={item.productId || ""}
+                          onChange={(e) => selectProduct(idx, e.target.value)}
+                          required
+                        >
+                          <option value="">Select product</option>
+                          {productsList.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}{p.hsn ? ` (${p.hsn})` : ""} — Stock: {p.currentStock} {p.unit}
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <div className="col-span-2">{idx === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} min={0.01} step={0.01} /></div>
-                      <div className="col-span-2">{idx === 0 && <Label className="text-xs">Rate</Label>}<Input type="number" value={item.rate} onChange={(e) => updateItem(idx, "rate", Number(e.target.value))} min={0} /></div>
-                      <div className="col-span-2">{idx === 0 && <Label className="text-xs">GST %</Label>}<Input type="number" value={item.gstPercent} onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))} min={0} max={28} /></div>
-                      <div className="col-span-1 text-right text-sm font-medium pt-1">{fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}</div>
-                      <div className="col-span-1">{items.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
+                      <div className="w-[100px] shrink-0">{idx === 0 && <Label className="text-xs">Batch No *</Label>}<Input value={item.batchNo} onChange={(e) => updateItem(idx, "batchNo", e.target.value)} placeholder="Batch" required /></div>
+                      <div className="w-[90px] shrink-0">{idx === 0 && <Label className="text-xs">SL No</Label>}<Input value={item.slNo} onChange={(e) => updateItem(idx, "slNo", e.target.value)} placeholder="Serial" /></div>
+                      <div className="w-[120px] shrink-0">{idx === 0 && <Label className="text-xs">Expiry</Label>}<Input type="date" value={item.expiryDate} onChange={(e) => updateItem(idx, "expiryDate", e.target.value)} /></div>
+                      <div className="w-[80px] shrink-0">{idx === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} min={0.01} step={0.01} /></div>
+                      <div className="w-[90px] shrink-0">{idx === 0 && <Label className="text-xs">Rate</Label>}<Input type="number" value={item.rate} onChange={(e) => updateItem(idx, "rate", Number(e.target.value))} min={0} /></div>
+                      <div className="w-[70px] shrink-0">{idx === 0 && <Label className="text-xs">GST %</Label>}<Input type="number" value={item.gstPercent} onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))} min={0} max={28} /></div>
+                      <div className="w-[80px] shrink-0 text-right text-sm font-medium pt-1">{fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}</div>
+                      <div className="w-[40px] shrink-0">{items.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
                     </div>
                   ))}
                 </div>
@@ -128,35 +214,162 @@ export default function PurchasesPage() {
 
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left p-3 font-medium">Bill #</th>
-                  <th className="text-left p-3 font-medium">Date</th>
-                  <th className="text-left p-3 font-medium">Vendor</th>
-                  <th className="text-right p-3 font-medium">Amount</th>
-                  <th className="text-right p-3 font-medium">Paid</th>
-                  <th className="text-center p-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((inv) => (
-                  <tr key={inv.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3 font-medium">{inv.invoiceNumber}</td>
-                    <td className="p-3">{new Date(inv.date).toLocaleDateString("en-IN")}</td>
-                    <td className="p-3">{inv.vendor?.name || "-"}</td>
-                    <td className="p-3 text-right font-medium">{fmt(inv.totalAmount)}</td>
-                    <td className="p-3 text-right">{fmt(inv.paidAmount)}</td>
-                    <td className="p-3 text-center"><span className={`text-xs px-2 py-1 rounded ${statusColor(inv.status)}`}>{inv.status}</span></td>
-                  </tr>
-                ))}
-                {invoices.length === 0 && (<tr><td colSpan={6} className="p-6 text-center text-gray-500">No purchase bills yet</td></tr>)}
-              </tbody>
-            </table>
-          </div>
+          <Table className="min-w-full table-fixed">
+            <colgroup>
+              <col className="w-[11rem]" />
+              <col className="w-[8rem]" />
+              <col />
+              <col className="w-[10rem]" />
+              <col className="w-[10rem]" />
+              <col className="w-[8rem]" />
+            </colgroup>
+            <TableHead>
+              <TableRow>
+                <TableHeader className="rounded-l-md bg-rubick-primary text-white">
+                  Bill #
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  Date
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-white">
+                  Vendor
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-right text-white">
+                  Amount
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-right text-white">
+                  Paid
+                </TableHeader>
+                <TableHeader className="bg-rubick-primary text-center text-white">
+                  Status
+                </TableHeader>
+                <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white w-[5rem]">
+                  View
+                </TableHeader>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {invoices.map((inv) => (
+                <TableRow key={inv.id}>
+                  <TableCell className="align-middle font-medium">
+                    {inv.invoiceNumber}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle">
+                    {new Date(inv.date).toLocaleDateString("en-IN")}
+                  </TableCell>
+                  <TableCell className="align-middle">
+                    {inv.vendor?.name || "-"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle text-right font-medium">
+                    {fmt(inv.totalAmount)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap align-middle text-right">
+                    {fmt(inv.paidAmount)}
+                  </TableCell>
+                  <TableCell className="align-middle text-center">
+                    <Badge
+                      variant={
+                        inv.status === "PAID"
+                          ? "paid"
+                          : inv.status === "PARTIAL"
+                            ? "partial"
+                            : "unpaid"
+                      }
+                    >
+                      {inv.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-middle text-center">
+                    <Button variant="ghost" size="icon" onClick={() => setViewInvoice(inv)}>
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {invoices.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-slate-400">
+                    No purchase bills yet
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
+
+      {/* Invoice Detail Popup */}
+      {viewInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewInvoice(null)}>
+          <div className="bg-[var(--card)] text-[var(--card-foreground)] rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+              <div>
+                <h3 className="text-lg font-bold">{viewInvoice.invoiceNumber}</h3>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  {new Date(viewInvoice.date).toLocaleDateString("en-IN")}
+                  {viewInvoice.dueDate && <> &middot; Due: {new Date(viewInvoice.dueDate).toLocaleDateString("en-IN")}</>}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant={viewInvoice.status === "PAID" ? "paid" : viewInvoice.status === "PARTIAL" ? "partial" : "unpaid"}>
+                  {viewInvoice.status}
+                </Badge>
+                <Button variant="ghost" size="icon" onClick={() => setViewInvoice(null)}><X className="h-4 w-4" /></Button>
+              </div>
+            </div>
+
+            {viewInvoice.vendor && (
+              <div className="px-6 pt-4">
+                <p className="text-sm font-medium text-[var(--muted-foreground)]">Vendor</p>
+                <p className="font-semibold">{viewInvoice.vendor.name}</p>
+                {viewInvoice.vendor.gstin && <p className="text-xs text-[var(--muted-foreground)]">GSTIN: {viewInvoice.vendor.gstin}</p>}
+                {viewInvoice.vendor.phone && <p className="text-xs text-[var(--muted-foreground)]">Phone: {viewInvoice.vendor.phone}</p>}
+                {viewInvoice.vendor.address && <p className="text-xs text-[var(--muted-foreground)]">{viewInvoice.vendor.address}{viewInvoice.vendor.city ? `, ${viewInvoice.vendor.city}` : ""}</p>}
+              </div>
+            )}
+
+            <div className="p-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-[var(--muted-foreground)]">
+                    <th className="text-left py-2 font-medium">#</th>
+                    <th className="text-left py-2 font-medium">Description</th>
+                    <th className="text-right py-2 font-medium">Qty</th>
+                    <th className="text-right py-2 font-medium">Rate</th>
+                    <th className="text-right py-2 font-medium">GST %</th>
+                    <th className="text-right py-2 font-medium">GST Amt</th>
+                    <th className="text-right py-2 font-medium">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {viewInvoice.items.map((item, i) => (
+                    <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                      <td className="py-2 text-[var(--muted-foreground)]">{i + 1}</td>
+                      <td className="py-2">{item.description}</td>
+                      <td className="py-2 text-right">{item.quantity}</td>
+                      <td className="py-2 text-right">{fmt(item.rate)}</td>
+                      <td className="py-2 text-right">{item.gstPercent}%</td>
+                      <td className="py-2 text-right">{fmt(item.gstAmount)}</td>
+                      <td className="py-2 text-right font-medium">{fmt(item.amount + item.gstAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-6 pb-6 space-y-1 border-t border-[var(--border)] pt-4">
+              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Subtotal</span><span>{fmt(viewInvoice.subtotal)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Tax (GST)</span><span>{fmt(viewInvoice.taxAmount)}</span></div>
+              <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2 mt-2"><span>Total</span><span>{fmt(viewInvoice.totalAmount)}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Paid</span><span className="text-green-600">{fmt(viewInvoice.paidAmount)}</span></div>
+              {viewInvoice.totalAmount - viewInvoice.paidAmount > 0 && (
+                <div className="flex justify-between text-sm font-medium"><span className="text-[var(--muted-foreground)]">Balance Due</span><span className="text-red-600">{fmt(viewInvoice.totalAmount - viewInvoice.paidAmount)}</span></div>
+              )}
+              {viewInvoice.notes && <p className="text-xs text-[var(--muted-foreground)] pt-2">Notes: {viewInvoice.notes}</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

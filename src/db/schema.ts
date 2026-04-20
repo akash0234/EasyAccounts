@@ -43,6 +43,25 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "UPI",
   "CHEQUE",
 ]);
+export const unitEnum = pgEnum("unit", [
+  "PCS",
+  "KG",
+  "LTR",
+  "BOX",
+  "MTR",
+  "SET",
+  "PAIR",
+  "DOZEN",
+  "STRIP",
+  "BOTTLE",
+  "TUBE",
+  "VIAL",
+]);
+export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
+  "IN",
+  "OUT",
+  "ADJUST",
+]);
 
 // ============================================
 // AUTH & MULTI-TENANCY
@@ -128,6 +147,7 @@ export const customers = pgTable(
     companyId: text("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
     name: text("name").notNull(),
     gstin: text("gstin"),
     pan: text("pan"),
@@ -155,6 +175,7 @@ export const vendors = pgTable(
     companyId: text("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
     name: text("name").notNull(),
     gstin: text("gstin"),
     pan: text("pan"),
@@ -184,6 +205,7 @@ export const ledgerAccounts = pgTable(
     companyId: text("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
     name: text("name").notNull(),
     type: ledgerAccountTypeEnum("type").notNull(),
     customerId: text("customer_id").references(() => customers.id),
@@ -248,12 +270,14 @@ export const invoices = pgTable(
     financialYearId: text("financial_year_id")
       .notNull()
       .references(() => financialYears.id),
+    code: text("code"),
     invoiceNumber: text("invoice_number").notNull(),
     type: invoiceTypeEnum("type").notNull(),
     date: timestamp("date").notNull(),
     dueDate: timestamp("due_date"),
     customerId: text("customer_id").references(() => customers.id),
     vendorId: text("vendor_id").references(() => vendors.id),
+    facilityId: text("facility_id").references(() => facilities.id),
     subtotal: real("subtotal").default(0).notNull(),
     taxAmount: real("tax_amount").default(0).notNull(),
     totalAmount: real("total_amount").default(0).notNull(),
@@ -280,12 +304,16 @@ export const invoiceItems = pgTable("invoice_items", {
   invoiceId: text("invoice_id")
     .notNull()
     .references(() => invoices.id, { onDelete: "cascade" }),
+  productId: text("product_id").references(() => products.id),
   description: text("description").notNull(),
   quantity: real("quantity").default(1).notNull(),
   rate: real("rate").default(0).notNull(),
   amount: real("amount").default(0).notNull(),
   gstPercent: real("gst_percent").default(0).notNull(),
   gstAmount: real("gst_amount").default(0).notNull(),
+  batchNo: text("batch_no"),
+  slNo: text("sl_no"),
+  expiryDate: timestamp("expiry_date"),
 });
 
 // ============================================
@@ -301,6 +329,7 @@ export const payments = pgTable(
     companyId: text("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
     paymentNumber: text("payment_number").notNull(),
     type: paymentTypeEnum("type").notNull(),
     date: timestamp("date").notNull(),
@@ -338,6 +367,166 @@ export const paymentAllocations = pgTable(
 );
 
 // ============================================
+// FACILITIES (Warehouses / Godowns)
+// ============================================
+
+export const facilities = pgTable(
+  "facilities",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
+    name: text("name").notNull(),
+    address: text("address"),
+    isDefault: boolean("is_default").default(false).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("facility_company_idx").on(table.companyId)]
+);
+
+// ============================================
+// CATEGORIES
+// ============================================
+
+export const categories = pgTable(
+  "categories",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("category_company_idx").on(table.companyId),
+    uniqueIndex("category_name_company_idx").on(table.companyId, table.name),
+  ]
+);
+
+export const subcategories = pgTable(
+  "subcategories",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("subcategory_company_idx").on(table.companyId),
+    index("subcategory_category_idx").on(table.categoryId),
+    uniqueIndex("subcategory_name_category_idx").on(
+      table.categoryId,
+      table.name
+    ),
+  ]
+);
+
+// ============================================
+// PRODUCTS & STOCK
+// ============================================
+
+export const products = pgTable(
+  "products",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    code: text("code"),
+    name: text("name").notNull(),
+    description: text("description"),
+    hsn: text("hsn"),
+    sku: text("sku"),
+    unit: unitEnum("unit").default("PCS").notNull(),
+    categoryId: text("category_id").references(() => categories.id),
+    subcategoryId: text("subcategory_id").references(() => subcategories.id),
+    gstPercent: real("gst_percent").default(0).notNull(),
+    purchaseRate: real("purchase_rate").default(0).notNull(),
+    sellingRate: real("selling_rate").default(0).notNull(),
+    openingStock: real("opening_stock").default(0).notNull(),
+    currentStock: real("current_stock").default(0).notNull(),
+    reorderLevel: real("reorder_level").default(0).notNull(),
+    imageUrl: text("image_url"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("product_company_idx").on(table.companyId)]
+);
+
+export const stockMovements = pgTable(
+  "stock_movements",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    facilityId: text("facility_id").references(() => facilities.id),
+    type: stockMovementTypeEnum("type").notNull(),
+    quantity: real("quantity").notNull(),
+    batchNo: text("batch_no"),
+    referenceType: text("reference_type"),
+    referenceId: text("reference_id"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("stock_product_idx").on(table.companyId, table.productId)]
+);
+
+export const facilityStock = pgTable(
+  "facility_stock",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => facilities.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    currentStock: real("current_stock").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("facility_product_idx").on(table.facilityId, table.productId),
+  ]
+);
+
+// ============================================
 // RELATIONS
 // ============================================
 
@@ -354,6 +543,10 @@ export const companiesRelations = relations(companies, ({ many }) => ({
   ledgerEntries: many(ledgerEntries),
   invoices: many(invoices),
   payments: many(payments),
+  products: many(products),
+  facilities: many(facilities),
+  categories: many(categories),
+  subcategories: many(subcategories),
 }));
 
 export const companyMembersRelations = relations(
@@ -459,6 +652,10 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     fields: [invoices.vendorId],
     references: [vendors.id],
   }),
+  facility: one(facilities, {
+    fields: [invoices.facilityId],
+    references: [facilities.id],
+  }),
   items: many(invoiceItems),
   paymentAllocations: many(paymentAllocations),
 }));
@@ -467,6 +664,10 @@ export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceItems.invoiceId],
     references: [invoices.id],
+  }),
+  product: one(products, {
+    fields: [invoiceItems.productId],
+    references: [products.id],
   }),
 }));
 
@@ -499,3 +700,83 @@ export const paymentAllocationsRelations = relations(
     }),
   })
 );
+
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [categories.companyId],
+    references: [companies.id],
+  }),
+  subcategories: many(subcategories),
+  products: many(products),
+}));
+
+export const subcategoriesRelations = relations(
+  subcategories,
+  ({ one, many }) => ({
+    company: one(companies, {
+      fields: [subcategories.companyId],
+      references: [companies.id],
+    }),
+    category: one(categories, {
+      fields: [subcategories.categoryId],
+      references: [categories.id],
+    }),
+    products: many(products),
+  })
+);
+
+export const productsRelations = relations(products, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [products.companyId],
+    references: [companies.id],
+  }),
+  category: one(categories, {
+    fields: [products.categoryId],
+    references: [categories.id],
+  }),
+  subcategory: one(subcategories, {
+    fields: [products.subcategoryId],
+    references: [subcategories.id],
+  }),
+  stockMovements: many(stockMovements),
+}));
+
+export const stockMovementsRelations = relations(stockMovements, ({ one }) => ({
+  company: one(companies, {
+    fields: [stockMovements.companyId],
+    references: [companies.id],
+  }),
+  product: one(products, {
+    fields: [stockMovements.productId],
+    references: [products.id],
+  }),
+  facility: one(facilities, {
+    fields: [stockMovements.facilityId],
+    references: [facilities.id],
+  }),
+}));
+
+export const facilitiesRelations = relations(facilities, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [facilities.companyId],
+    references: [companies.id],
+  }),
+  invoices: many(invoices),
+  stockMovements: many(stockMovements),
+  facilityStock: many(facilityStock),
+}));
+
+export const facilityStockRelations = relations(facilityStock, ({ one }) => ({
+  company: one(companies, {
+    fields: [facilityStock.companyId],
+    references: [companies.id],
+  }),
+  facility: one(facilities, {
+    fields: [facilityStock.facilityId],
+    references: [facilities.id],
+  }),
+  product: one(products, {
+    fields: [facilityStock.productId],
+    references: [products.id],
+  }),
+}));

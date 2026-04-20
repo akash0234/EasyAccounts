@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { customers, ledgerAccounts, ledgerEntries, financialYears } from "@/db/schema";
 import { customerSchema } from "@/lib/validations";
+import { generateCode } from "@/lib/code-generator";
+import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
 import { eq, and } from "drizzle-orm";
 
@@ -43,6 +45,7 @@ export async function POST(req: NextRequest) {
     .insert(customers)
     .values({
       companyId,
+      code: generateCode(CODE_PREFIX.CUSTOMER),
       ...rest,
       gstin: rest.gstin || null,
       email: rest.email || null,
