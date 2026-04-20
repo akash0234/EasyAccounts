@@ -20,6 +20,33 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Setup
+
+The app uses these environment variables:
+
+- `DATABASE_URL`
+- `NEXTAUTH_SECRET`
+- `NEXTAUTH_URL`
+
+### Local Development
+
+1. Copy [.env.example](./.env.example) to [.env.local](./.env.local).
+2. Update `DATABASE_URL` to point at your local Postgres database.
+3. Set `NEXTAUTH_SECRET` to any long random string.
+4. Keep `NEXTAUTH_URL` as `http://localhost:3000` while developing locally.
+
+The app and maintenance scripts load `.env.local` first, then `.env`.
+
+### Production
+
+Set the same variables in your production host, for example Vercel, Railway, or your own server:
+
+- `DATABASE_URL` should point at the production database.
+- `NEXTAUTH_SECRET` should be a strong, unique secret.
+- `NEXTAUTH_URL` should be your live domain, such as `https://app.yourdomain.com`.
+
+If you self-host with env files, you can also use `.env.production` with the same values.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

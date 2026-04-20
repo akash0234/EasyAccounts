@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight } from "lucide-react";
 
 interface Subcategory {
   id: string;
@@ -151,26 +151,29 @@ export default function CategoriesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Categories</h1>
-          <p className="text-muted-foreground">Manage product categories and subcategories.</p>
+      <div className="rubick-panel flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Categories</h1>
+          <p className="text-sm text-slate-500">Manage product categories and subcategories.</p>
         </div>
         <Button onClick={() => openCatForm()}>
           <Plus className="mr-2 h-4 w-4" /> Add Category
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Search categories..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      <div className="rubick-panel-muted flex items-center gap-3">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search categories..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
+          {filtered.length} total
+        </div>
       </div>
 
       {/* Category Form Modal */}
@@ -225,7 +228,11 @@ export default function CategoriesPage() {
 
       {/* Categories Table */}
       {loading ? (
-        <p className="text-muted-foreground">Loading...</p>
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            Loading categories...
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
@@ -233,83 +240,119 @@ export default function CategoriesPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10" />
-                <TableHead>Category</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-center">Subcategories</TableHead>
-                <TableHead className="text-center">Products</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((cat) => {
-                const expanded = expandedIds.has(cat.id);
-                return (
-                  <>
-                    <TableRow key={cat.id} className="cursor-pointer" onClick={() => toggleExpand(cat.id)}>
-                      <TableCell>
-                        {cat.subcategories.length > 0 ? (
-                          expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="font-medium">{cat.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{cat.description}</TableCell>
-                      <TableCell className="text-center">{cat.subcategories.length}</TableCell>
-                      <TableCell className="text-center">{cat.productCount}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={cat.isActive ? "default" : "secondary"}>
-                          {cat.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => openSubForm(cat.id)} title="Add subcategory">
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => openCatForm(cat)}>
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => deleteCat(cat.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {expanded &&
-                      cat.subcategories.map((sub) => (
-                        <TableRow key={sub.id} className="bg-muted/30">
-                          <TableCell />
-                          <TableCell className="pl-10 text-sm">{sub.name}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{sub.description}</TableCell>
-                          <TableCell />
-                          <TableCell className="text-center text-sm">{sub.productCount}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant={sub.isActive ? "default" : "secondary"} className="text-xs">
-                              {sub.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button variant="ghost" size="icon" onClick={() => openSubForm(cat.id, sub)}>
-                                <Edit2 className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" onClick={() => deleteSub(sub.id)}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                  </>
-                );
-              })}
-            </TableBody>
-          </Table>
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            <Table className="min-w-full table-fixed">
+              <colgroup>
+                <col className="w-[4rem]" />
+                <col className="w-[18rem]" />
+                <col />
+                <col className="w-[9rem]" />
+                <col className="w-[9rem]" />
+                <col className="w-[9rem]" />
+                <col className="w-[7.5rem]" />
+              </colgroup>
+              <TableHead>
+                <TableRow>
+                  <TableHeader className="rounded-l-md bg-rubick-primary text-white" />
+                  <TableHeader className="bg-rubick-primary text-white">Category</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Description</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-center text-white">Subcategories</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-center text-white">Products</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-center text-white">Status</TableHeader>
+                  <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white">Actions</TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filtered.map((cat) => {
+                  const expanded = expandedIds.has(cat.id);
+                  return (
+                    <Fragment key={cat.id}>
+                      <TableRow
+                        className="cursor-pointer"
+                        onClick={() => toggleExpand(cat.id)}
+                      >
+                        <TableCell className="align-middle">
+                          <div className="flex items-center justify-center">
+                            {cat.subcategories.length > 0 ? (
+                              expanded ? (
+                                <ChevronDown className="h-4 w-4 text-slate-500" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-slate-500" />
+                              )
+                            ) : (
+                              <span className="inline-block h-4 w-4" />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="align-middle font-medium text-slate-900">
+                          {cat.name}
+                        </TableCell>
+                        <TableCell className="align-middle text-slate-500">
+                          {cat.description || "-"}
+                        </TableCell>
+                        <TableCell className="align-middle text-center text-slate-700">
+                          {cat.subcategories.length}
+                        </TableCell>
+                        <TableCell className="align-middle text-center text-slate-700">
+                          {cat.productCount}
+                        </TableCell>
+                        <TableCell className="align-middle text-center">
+                          <Badge variant={cat.isActive ? "default" : "secondary"}>
+                            {cat.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="align-middle">
+                          <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => openSubForm(cat.id)} title="Add subcategory">
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => openCatForm(cat)} title="Edit category">
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => deleteCat(cat.id)} title="Delete category">
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {expanded &&
+                        cat.subcategories.map((sub) => (
+                          <TableRow key={sub.id} className="bg-slate-50/80 dark:bg-white/5">
+                            <TableCell />
+                            <TableCell className="align-middle pl-10 text-sm font-medium text-slate-800">
+                              {sub.name}
+                            </TableCell>
+                            <TableCell className="align-middle text-sm text-slate-500">
+                              {sub.description || "-"}
+                            </TableCell>
+                            <TableCell />
+                            <TableCell className="align-middle text-center text-sm text-slate-700">
+                              {sub.productCount}
+                            </TableCell>
+                            <TableCell className="align-middle text-center">
+                              <Badge variant={sub.isActive ? "default" : "secondary"} className="text-xs">
+                                {sub.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="align-middle">
+                              <div className="flex items-center justify-center gap-1">
+                                <Button variant="ghost" size="icon" onClick={() => openSubForm(cat.id, sub)} title="Edit subcategory">
+                                  <Edit2 className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => deleteSub(sub.id)} title="Delete subcategory">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </Fragment>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
         </Card>
       )}
     </div>

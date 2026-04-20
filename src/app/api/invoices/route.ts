@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       eq(invoices.companyId, session.user.companyId),
       eq(invoices.type, type as "SALES" | "PURCHASE")
     ),
-    with: { customer: true, vendor: true, items: true },
+    with: { customer: true, vendor: true, facility: true, items: true },
     orderBy: (i, { desc }) => [desc(i.date)],
   });
 

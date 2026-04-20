@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Search, Trash2, Edit2, X, Upload } from "lucide-react";
+import { FacilityStockModal, type InventoryStockProduct } from "@/components/inventory/facility-stock-modal";
 
 interface FacilityStockItem {
   facilityId: string;
@@ -57,7 +58,7 @@ export default function InventoryPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<InventoryStockProduct | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({ ...defaultForm });
 
@@ -323,26 +324,19 @@ export default function InventoryPage() {
                     {fmt(p.sellingRate)}
                   </TableCell>
                   <TableCell className="align-middle text-right">
-                    <button type="button" onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="cursor-pointer">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProduct(p)}
+                      className="cursor-pointer"
+                      title="View facility stock"
+                    >
                       <Badge
                         variant={p.currentStock <= p.reorderLevel ? "unpaid" : "paid"}
+                        className="bg-white/75"
                       >
                         {p.currentStock} {p.unit}
                       </Badge>
                     </button>
-                    {expandedId === p.id && p.facilityStock && p.facilityStock.length > 0 && (
-                      <div className="mt-1 text-xs text-left space-y-0.5">
-                        {p.facilityStock.map((fs) => (
-                          <div key={fs.facilityId} className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">{fs.facilityName}</span>
-                            <span className="font-medium">{fs.currentStock} {p.unit}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {expandedId === p.id && (!p.facilityStock || p.facilityStock.length === 0) && (
-                      <div className="mt-1 text-xs text-muted-foreground">No facility stock</div>
-                    )}
                   </TableCell>
                   <TableCell className="align-middle text-right">
                     <div className="flex justify-end gap-1">
@@ -375,6 +369,13 @@ export default function InventoryPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {selectedProduct && (
+        <FacilityStockModal
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+        />
+      )}
     </div>
   );
 }

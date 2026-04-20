@@ -7,7 +7,11 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import Lucide from "@/base-components/lucide";
 import logoUrl from "@/assets/images/logo.svg";
-import { navGroups, type NavItem } from "@/components/layout/nav-items";
+import {
+  navGroups,
+  matchesNavPath,
+  type NavItem,
+} from "@/components/layout/nav-items";
 
 function SidebarNavigation({
   mobile = false,
@@ -28,10 +32,10 @@ function SidebarNavigation({
   function isItemActive(item: NavItem) {
     if (item.children) {
       return item.children.some(
-        (c) => pathname === c.href || pathname.startsWith(`${c.href}/`)
+        (c) => matchesNavPath(pathname, c.href, c.match)
       );
     }
-    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+    return matchesNavPath(pathname, item.href, item.match);
   }
 
   function renderNavLink(
@@ -39,8 +43,9 @@ function SidebarNavigation({
     idx: number,
     {
       isActive,
+      activeTone = "default",
       isChild = false,
-    }: { isActive: boolean; isChild?: boolean }
+    }: { isActive: boolean; activeTone?: "default" | "soft"; isChild?: boolean }
   ) {
     return (
       <Link
@@ -53,7 +58,9 @@ function SidebarNavigation({
           isChild ? "h-[42px] pl-12 pr-4" : "h-[52px] pl-5 pr-4",
           compact && "mx-auto h-12 w-12 justify-center px-0",
           isActive
-            ? "rubick-nav-active"
+            ? activeTone === "soft"
+              ? "border border-white/40 bg-white/75 text-slate-900 shadow-sm"
+              : "rubick-nav-active"
             : "text-white/70 hover:bg-white/5 hover:text-white"
         )}
         style={{
@@ -63,14 +70,14 @@ function SidebarNavigation({
           animationDelay: `${idx * 0.08 + 0.2}s`,
         }}
       >
-        <Lucide
-          icon={item.icon}
-          className={cn(
-            isChild ? "h-3.5 w-3.5" : "h-4 w-4",
-            "flex-shrink-0",
-            isActive ? "text-rubick-primary" : "text-current"
-          )}
-        />
+          <Lucide
+            icon={item.icon}
+            className={cn(
+              isChild ? "h-3.5 w-3.5" : "h-4 w-4",
+              "flex-shrink-0",
+              isActive ? "text-rubick-primary" : "text-current"
+            )}
+          />
         <div className={cn("ml-3 min-w-0 flex-1", compact && "hidden")}>
           <div
             className={cn(
@@ -158,13 +165,12 @@ function SidebarNavigation({
           <ul className="mt-1">
             {item.children!.map((child) => {
               const childIdx = animationIndex++;
-              const childActive =
-                pathname === child.href ||
-                pathname.startsWith(`${child.href}/`);
+              const childActive = matchesNavPath(pathname, child.href, child.match);
               return (
                 <li key={child.href} className="mb-0.5">
                   {renderNavLink(child, childIdx, {
                     isActive: childActive,
+                    activeTone: "soft",
                     isChild: true,
                   })}
                 </li>
@@ -197,9 +203,9 @@ function SidebarNavigation({
             const isActive = isItemActive(item);
 
             return (
-              <li key={item.href} className="mb-1">
-                {renderNavLink(item, currentIndex, { isActive })}
-              </li>
+            <li key={item.href} className="mb-1">
+              {renderNavLink(item, currentIndex, { isActive })}
+            </li>
             );
           })}
         </ul>

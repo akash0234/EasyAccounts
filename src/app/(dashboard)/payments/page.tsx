@@ -13,12 +13,38 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X } from "lucide-react";
+import { Eye, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 
 interface Customer { id: string; name: string; }
 interface Vendor { id: string; name: string; }
-interface Invoice { id: string; invoiceNumber: string; totalAmount: number; paidAmount: number; status: string; customerId?: string | null; vendorId?: string | null; }
+interface InvoiceItem {
+  description: string;
+  quantity: number;
+  rate: number;
+  gstPercent: number;
+  gstAmount: number;
+  amount: number;
+}
+interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  date: string;
+  dueDate?: string | null;
+  totalAmount: number;
+  paidAmount: number;
+  subtotal?: number;
+  taxAmount?: number;
+  status: string;
+  notes?: string | null;
+  customerId?: string | null;
+  vendorId?: string | null;
+  customer?: { name: string; gstin?: string | null; phone?: string | null; billingAddress?: string | null; city?: string | null } | null;
+  vendor?: { name: string; gstin?: string | null; phone?: string | null; address?: string | null; city?: string | null } | null;
+  facility?: { name: string; address?: string | null } | null;
+  items?: InvoiceItem[];
+}
 interface PaymentAllocation { invoiceId: string; amount: number; }
 interface Payment {
   id: string; paymentNumber: string; date: string; amount: number;
@@ -35,6 +61,7 @@ export default function PaymentsPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [unpaidInvoices, setUnpaidInvoices] = useState<Invoice[]>([]);
+  const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"RECEIVED" | "MADE">("RECEIVED");
@@ -48,27 +75,77 @@ export default function PaymentsPage() {
   const [customerId, setCustomerId] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [allocations, setAllocations] = useState<{ invoiceId: string; amount: number }[]>([]);
-  const [isAdvance, setIsAdvance] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<"BILLS" | "ADVANCE">("BILLS");
+  const [useAdvancePayments, setUseAdvancePayments] = useState(false);
   const [advanceAmount, setAdvanceAmount] = useState(0);
   const [advanceSummary, setAdvanceSummary] = useState<AdvanceSummary>({ totalAvailable: 0, advances: [] });
+  const [advanceUsage, setAdvanceUsage] = useState<Record<string, number>>({});
 
   const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
-  const isPureAdvance = isAdvance && unpaidInvoices.length === 0;
+  const isAdvanceMode = paymentMode === "ADVANCE";
+  const isPureAdvance = isAdvanceMode;
 
-  // Greedy smallest-first advance deduction
-  const computedAdvance = useMemo(() => {
-    if (!isAdvance || allocatedTotal <= 0 || advanceSummary.advances.length === 0) {
-      return { advanceAllocations: [] as { paymentId: string; invoiceId: string; amount: number }[], totalAdvanceUsed: 0, advanceUsage: [] as { paymentId: string; paymentNumber: string; availableBalance: number; used: number }[] };
+  const autoAdvanceUsage = useMemo(() => {
+    if (!useAdvancePayments || isAdvanceMode || allocatedTotal <= 0 || advanceSummary.advances.length === 0) {
+      return {} as Record<string, number>;
     }
 
+    const result: Record<string, number> = {};
     const sorted = [...advanceSummary.advances].sort((a, b) => a.availableBalance - b.availableBalance);
-    const advAllocations: { paymentId: string; invoiceId: string; amount: number }[] = [];
-    const advUsage: { paymentId: string; paymentNumber: string; availableBalance: number; used: number }[] = [];
     let remaining = allocatedTotal;
 
     for (const adv of sorted) {
-      if (remaining <= 0) break;
+      if (remaining <= 0.005) break;
       const useFromThis = Math.min(adv.availableBalance, remaining);
+      if (useFromThis > 0) {
+        result[adv.paymentId] = Math.round(useFromThis * 100) / 100;
+        remaining -= useFromThis;
+      }
+    }
+
+    return result;
+  }, [allocatedTotal, advanceSummary.advances, isAdvanceMode, useAdvancePayments]);
+
+  const effectiveAdvanceUsage = useMemo(() => {
+    if (!useAdvancePayments || isAdvanceMode) {
+      return {} as Record<string, number>;
+    }
+
+    const merged: Record<string, number> = {};
+    for (const adv of advanceSummary.advances) {
+      const override = advanceUsage[adv.paymentId];
+      const auto = autoAdvanceUsage[adv.paymentId] ?? 0;
+      const chosen = Number.isFinite(override)
+        ? Math.max(0, Math.min(override ?? 0, adv.availableBalance))
+        : auto;
+      if (chosen > 0) {
+        merged[adv.paymentId] = Math.round(chosen * 100) / 100;
+      }
+    }
+    return merged;
+  }, [advanceUsage, advanceSummary.advances, autoAdvanceUsage, isAdvanceMode, useAdvancePayments]);
+
+  const selectedAdvanceTotal = useMemo(
+    () =>
+      Object.values(effectiveAdvanceUsage).reduce((sum, amount) => sum + amount, 0),
+    [effectiveAdvanceUsage]
+  );
+  const cashToPay = Math.max(0, allocatedTotal - selectedAdvanceTotal);
+  const effectiveAmount = isPureAdvance ? advanceAmount : cashToPay;
+  const advanceAllocations = useMemo(() => {
+    if (!useAdvancePayments || isAdvanceMode || allocatedTotal <= 0 || selectedAdvanceTotal <= 0) {
+      return [] as { paymentId: string; invoiceId: string; amount: number }[];
+    }
+
+    const advAllocations: { paymentId: string; invoiceId: string; amount: number }[] = [];
+    let remainingAdvance = selectedAdvanceTotal;
+    const sortedAdvances = [...advanceSummary.advances].sort((a, b) => a.availableBalance - b.availableBalance);
+
+    for (const adv of sortedAdvances) {
+      if (remainingAdvance <= 0.005) break;
+
+      const requested = Math.min(Math.max(0, effectiveAdvanceUsage[adv.paymentId] || 0), adv.availableBalance);
+      const useFromThis = Math.min(requested, remainingAdvance);
       let advRemaining = useFromThis;
 
       for (const alloc of allocations) {
@@ -86,23 +163,15 @@ export default function PaymentsPage() {
         advRemaining -= cover;
       }
 
-      const used = useFromThis - advRemaining;
-      if (used > 0) {
-        advUsage.push({ ...adv, used });
-      }
-      remaining -= used;
+      remainingAdvance -= useFromThis - advRemaining;
     }
 
-    return {
-      advanceAllocations: advAllocations,
-      totalAdvanceUsed: advAllocations.reduce((s, a) => s + a.amount, 0),
-      advanceUsage: advUsage,
-    };
-  }, [isAdvance, allocatedTotal, allocations, advanceSummary.advances]);
+    return advAllocations;
+  }, [advanceSummary.advances, allocatedTotal, allocations, effectiveAdvanceUsage, isAdvanceMode, selectedAdvanceTotal, useAdvancePayments]);
 
-  const advanceCovered = computedAdvance.totalAdvanceUsed;
-  const cashToPay = Math.max(0, allocatedTotal - advanceCovered);
-  const effectiveAmount = isPureAdvance ? advanceAmount : cashToPay;
+  const advanceError = paymentMode === "BILLS" && useAdvancePayments && selectedAdvanceTotal > allocatedTotal + 0.01
+    ? "Advance used cannot exceed the bill total."
+    : null;
 
   async function load() {
     const [payRes, custRes, vendRes] = await Promise.all([
@@ -159,8 +228,8 @@ export default function PaymentsPage() {
       const unpaid = invData.filter((i: Invoice) => i.status !== "PAID" && i[partyField] === partyId);
       setUnpaidInvoices(unpaid);
 
-      // For PURCHASE (PM), auto-fill full due amount for every bill
-      if (invoiceType === "PURCHASE") {
+      // For PURCHASE (PM), auto-fill full due amount for every bill when we are in bill mode.
+      if (invoiceType === "PURCHASE" && paymentMode === "BILLS") {
         setAllocations(unpaid.map((inv: Invoice) => ({
           invoiceId: inv.id,
           amount: inv.totalAmount - inv.paidAmount,
@@ -183,8 +252,12 @@ export default function PaymentsPage() {
       }
       const totalAvailable = advances.reduce((s, a) => s + a.availableBalance, 0);
       setAdvanceSummary({ totalAvailable, advances });
+      setAdvanceUsage({});
+      setUseAdvancePayments(false);
     } else {
       setAdvanceSummary({ totalAvailable: 0, advances: [] });
+      setAdvanceUsage({});
+      setUseAdvancePayments(false);
     }
 
   }
@@ -193,8 +266,10 @@ export default function PaymentsPage() {
     setShowForm(false);
     setAllocations([]);
     setAdvanceSummary({ totalAvailable: 0, advances: [] });
+    setAdvanceUsage({});
+    setUseAdvancePayments(false);
     setAdvanceAmount(0);
-    setIsAdvance(false);
+    setPaymentMode("BILLS");
     setReference("");
     setNotes("");
     setCustomerId("");
@@ -215,8 +290,8 @@ export default function PaymentsPage() {
       vendorId: paymentType === "MADE" ? vendorId : undefined,
       allocations: isPureAdvance ? [] : allocations.filter((a) => a.amount > 0),
     };
-    if (computedAdvance.advanceAllocations.length > 0) {
-      payload.advanceAllocations = computedAdvance.advanceAllocations;
+    if (advanceAllocations.length > 0) {
+      payload.advanceAllocations = advanceAllocations;
     }
     const res = await fetch("/api/payments", {
       method: "POST",
@@ -282,24 +357,49 @@ export default function PaymentsPage() {
                     <option value="CHEQUE">Cheque</option>
                   </select>
                 </div>
-                {paymentType === "MADE" && (unpaidInvoices.length === 0 || advanceSummary.advances.length > 0) && (
+                {paymentType === "MADE" && (
                   <div className="flex items-end">
-                    <label className="flex items-center gap-2 cursor-pointer h-9">
-                      <input type="checkbox" checked={isAdvance} onChange={(e) => {
-                        setIsAdvance(e.target.checked);
-                        setAdvanceAmount(0);
-                        // Re-fill allocations when toggling back
-                        if (!e.target.checked && unpaidInvoices.length > 0) {
-                          setAllocations(unpaidInvoices.map((inv) => ({
-                            invoiceId: inv.id,
-                            amount: inv.totalAmount - inv.paidAmount,
-                          })));
-                        }
-                      }} />
-                      <span className="text-sm font-medium">
-                        {unpaidInvoices.length > 0 ? "Use Advance" : "Advance Payment"}
-                      </span>
-                    </label>
+                    <div className="inline-flex rounded-md border border-input bg-white p-0.5 shadow-sm">
+                      <button
+                        type="button"
+                        className={`h-9 rounded-md px-3 text-sm font-medium transition ${
+                          paymentMode === "BILLS"
+                            ? "bg-rubick-primary text-white"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                        onClick={() => {
+                          setPaymentMode("BILLS");
+                          setAdvanceAmount(0);
+                          setAdvanceUsage({});
+                          setUseAdvancePayments(false);
+                          if (unpaidInvoices.length > 0) {
+                            setAllocations(unpaidInvoices.map((inv) => ({
+                              invoiceId: inv.id,
+                              amount: inv.totalAmount - inv.paidAmount,
+                            })));
+                          }
+                        }}
+                      >
+                        Pay Bills
+                      </button>
+                      <button
+                        type="button"
+                        className={`h-9 rounded-md px-3 text-sm font-medium transition ${
+                          paymentMode === "ADVANCE"
+                            ? "bg-rubick-primary text-white"
+                            : "text-slate-700 hover:bg-slate-100"
+                        }`}
+                        onClick={() => {
+                          setPaymentMode("ADVANCE");
+                          setAdvanceAmount(0);
+                          setAdvanceUsage({});
+                          setUseAdvancePayments(false);
+                          setAllocations([]);
+                        }}
+                      >
+                        Advance Payment
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -312,11 +412,20 @@ export default function PaymentsPage() {
               {/* ── PAYMENT MADE: bills + advance side-by-side ── */}
               {paymentType === "MADE" && (
                 <>
-                  {isAdvance && unpaidInvoices.length === 0 ? (
-                    /* Pure advance — no bills to pay */
+                  {paymentMode === "ADVANCE" ? (
                     <div className="max-w-xs">
                       <Label>Advance Amount *</Label>
-                      <Input type="number" value={advanceAmount || ""} onChange={(e) => setAdvanceAmount(Number(e.target.value))} min={0.01} step={0.01} required />
+                      <Input
+                        type="number"
+                        value={advanceAmount || ""}
+                        onChange={(e) => setAdvanceAmount(Number(e.target.value))}
+                        min={0.01}
+                        step={0.01}
+                        required
+                      />
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Record a new advance payment without showing payable bills.
+                      </p>
                     </div>
                   ) : unpaidInvoices.length > 0 ? (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -330,8 +439,8 @@ export default function PaymentsPage() {
                             return (
                               <div key={inv.id} className="flex items-center gap-3 text-sm">
                                 <span className="w-32 font-medium truncate">{inv.invoiceNumber}</span>
-                                <span className="w-24 text-muted-foreground">Total: {fmt(inv.totalAmount)}</span>
-                                <span className="w-24 font-medium text-red-600">Due: {fmt(balance)}</span>
+                                <span className="w-30 text-muted-foreground flex">Total: <span>{fmt(inv.totalAmount)}</span></span>
+                                <span className="w-30 font-medium text-red-600 flex">Due: <span>{fmt(balance)}</span></span>
                                 <Input
                                   type="number"
                                   className="w-28"
@@ -360,6 +469,15 @@ export default function PaymentsPage() {
                                 >
                                   Full
                                 </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setViewInvoice(inv)}
+                                  title="View invoice"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
                               </div>
                             );
                           })}
@@ -369,13 +487,26 @@ export default function PaymentsPage() {
                       {/* RIGHT: Advance Payments List */}
                       <div className="rubick-panel-muted">
                         <div className="flex items-center justify-between">
-                          <div className="text-sm font-semibold text-slate-800">Advance Payments</div>
+                          <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={useAdvancePayments}
+                              onChange={(e) => {
+                                setUseAdvancePayments(e.target.checked);
+                                if (!e.target.checked) {
+                                  setAdvanceUsage({});
+                                }
+                              }}
+                            />
+                            <span>Use Advance Payment</span>
+                          </label>
                           {advanceSummary.totalAvailable > 0 && (
                             <div className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
                               {fmt(advanceSummary.totalAvailable)} available
                             </div>
                           )}
                         </div>
+                        <div className="mt-2 text-sm font-semibold text-slate-800">Advance Payments</div>
 
                         {advanceSummary.advances.length > 0 ? (
                           <div className="mt-3 rubick-list">
@@ -383,15 +514,55 @@ export default function PaymentsPage() {
                               <div key={adv.paymentId} className="rubick-list-item">
                                 <div className="flex-1">
                                   <div className="font-medium text-slate-800 text-sm">{adv.paymentNumber}</div>
+                                  <div className="text-xs text-slate-500">
+                                    Available: {fmt(adv.availableBalance)}
+                                  </div>
                                 </div>
-                                <div className="text-right">
-                                  <div className="text-sm font-semibold text-emerald-700">{fmt(adv.availableBalance)}</div>
-                                </div>
+                                {useAdvancePayments ? (
+                                  <div className="w-32 text-right">
+                                    <Input
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      max={Math.max(0, Math.min(
+                                        adv.availableBalance,
+                                        allocatedTotal - (selectedAdvanceTotal - (effectiveAdvanceUsage[adv.paymentId] || 0))
+                                      ))}
+                                      value={effectiveAdvanceUsage[adv.paymentId] ?? ""}
+                                      onChange={(e) => {
+                                        const next = Number(e.target.value);
+                                        const current = effectiveAdvanceUsage[adv.paymentId] || 0;
+                                        const otherSelected = selectedAdvanceTotal - current;
+                                        const maxForRow = Math.max(
+                                          0,
+                                          Math.min(adv.availableBalance, allocatedTotal - otherSelected)
+                                        );
+                                        const clamped = Number.isFinite(next)
+                                          ? Math.max(0, Math.min(next, maxForRow))
+                                          : 0;
+                                        setAdvanceUsage((prev) => ({
+                                          ...prev,
+                                          [adv.paymentId]: clamped,
+                                        }));
+                                      }}
+                                      placeholder="Use"
+                                      disabled={allocatedTotal <= 0}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="text-right text-sm font-semibold text-emerald-700">
+                                    {fmt(adv.availableBalance)}
+                                  </div>
+                                )}
                               </div>
                             ))}
                             <div className="flex items-center justify-between rounded-2xl bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-800">
-                              <span>Total Available</span>
-                              <span>{fmt(advanceSummary.totalAvailable)}</span>
+                              <span>Selected Advance</span>
+                              <span>{fmt(selectedAdvanceTotal)}</span>
+                            </div>
+                            <div className="flex items-center justify-between rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800">
+                              <span>Advance Applied</span>
+                              <span>{fmt(selectedAdvanceTotal)}</span>
                             </div>
                           </div>
                         ) : (
@@ -400,26 +571,34 @@ export default function PaymentsPage() {
                           </div>
                         )}
 
-                        {/* Auto-computed advance deduction — shown when checkbox is ON */}
-                        {isAdvance && computedAdvance.advanceUsage.length > 0 && (
+                        {useAdvancePayments && advanceAllocations.length > 0 && (
                           <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 space-y-2">
                             <div className="text-sm font-medium text-emerald-800">Advance Deduction</div>
-                            {computedAdvance.advanceUsage.map((u) => (
-                              <div key={u.paymentId} className="flex justify-between text-sm">
-                                <span className="text-slate-700">{u.paymentNumber}</span>
-                                <span className="font-medium text-emerald-700">&minus;{fmt(u.used)}</span>
-                              </div>
-                            ))}
+                            {advanceSummary.advances.map((adv) => {
+                              const used = advanceAllocations
+                                .filter((a) => a.paymentId === adv.paymentId)
+                                .reduce((sum, a) => sum + a.amount, 0);
+                              if (used <= 0) return null;
+                              return (
+                                <div key={adv.paymentId} className="flex justify-between text-sm">
+                                  <span className="text-slate-700">{adv.paymentNumber}</span>
+                                  <span className="font-medium text-emerald-700">&minus;{fmt(used)}</span>
+                                </div>
+                              );
+                            })}
                             <div className="flex justify-between text-sm font-semibold border-t border-emerald-200 pt-2">
                               <span>Total Deducted</span>
-                              <span className="text-emerald-700">{fmt(computedAdvance.totalAdvanceUsed)}</span>
+                              <span className="text-emerald-700">{fmt(selectedAdvanceTotal)}</span>
                             </div>
                           </div>
+                        )}
+                        {advanceError && (
+                          <p className="mt-2 text-sm text-red-600">{advanceError}</p>
                         )}
                       </div>
                     </div>
                   ) : vendorId ? (
-                    <p className="text-sm text-muted-foreground">No outstanding bills. Use &quot;Advance Payment&quot; to record without allocation.</p>
+                    <p className="text-sm text-muted-foreground">No outstanding bills. Switch to &quot;Advance Payment&quot; to record a new advance.</p>
                   ) : null}
                 </>
               )}
@@ -479,14 +658,21 @@ export default function PaymentsPage() {
                   {!isPureAdvance && allocatedTotal > 0 && (
                     <div className="text-sm text-muted-foreground mb-1">
                       Bill Total: {fmt(allocatedTotal)}
-                      {advanceCovered > 0 && <> &minus; Advance: {fmt(advanceCovered)}</>}
+                      {selectedAdvanceTotal > 0 && <> &minus; Advance: {fmt(selectedAdvanceTotal)}</>}
                     </div>
                   )}
                   <div className="text-lg font-bold">
                     {isPureAdvance ? "Advance" : "Cash to Pay"}: {fmt(effectiveAmount)}
                   </div>
                 </div>
-                <Button type="submit" disabled={loading || (isPureAdvance ? advanceAmount <= 0 : allocatedTotal <= 0)}>
+                <Button
+                  type="submit"
+                  disabled={
+                    loading ||
+                    (isPureAdvance ? advanceAmount <= 0 : allocatedTotal <= 0) ||
+                    !!advanceError
+                  }
+                >
                   {loading ? "Saving..." : "Record Payment"}
                 </Button>
               </div>
@@ -562,6 +748,10 @@ export default function PaymentsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {viewInvoice && (
+        <InvoiceDetailModal invoice={viewInvoice} onClose={() => setViewInvoice(null)} />
+      )}
     </div>
   );
 }

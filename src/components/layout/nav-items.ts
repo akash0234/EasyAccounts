@@ -3,6 +3,7 @@ export interface NavItem {
   label: string;
   description: string;
   icon: string;
+  match?: "exact" | "prefix";
   children?: NavItem[];
 }
 
@@ -51,12 +52,14 @@ export const navGroups: NavGroup[] = [
             label: "Products",
             description: "Product master list and stock levels.",
             icon: "Box",
+            match: "exact",
           },
           {
             href: "/inventory/categories",
             label: "Categories",
             description: "Product categories and subcategories.",
             icon: "Tags",
+            match: "prefix",
           },
         ],
       },
@@ -109,6 +112,18 @@ export const navItems = navGroups.flatMap((group) =>
   group.items.flatMap((item) => (item.children ? [item, ...item.children] : [item]))
 );
 
+export function matchesNavPath(
+  pathname: string,
+  href: string,
+  match: NavItem["match"] = "prefix"
+) {
+  if (match === "exact") {
+    return pathname === href;
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export function getPageMeta(pathname: string) {
   const normalizedPath = pathname === "/" ? "/dashboard" : pathname;
 
@@ -117,17 +132,14 @@ export function getPageMeta(pathname: string) {
     for (const item of group.items) {
       if (item.children) {
         const child = item.children.find(
-          (c) =>
-            normalizedPath === c.href ||
-            normalizedPath.startsWith(`${c.href}/`)
+          (c) => matchesNavPath(normalizedPath, c.href, c.match)
         );
         if (child) {
           return { ...child, groupLabel: group.label };
         }
       }
       if (
-        normalizedPath === item.href ||
-        normalizedPath.startsWith(`${item.href}/`)
+        matchesNavPath(normalizedPath, item.href, item.match)
       ) {
         return { ...item, groupLabel: group.label };
       }

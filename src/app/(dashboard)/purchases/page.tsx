@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, X, Trash2, Eye } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 
 interface Vendor { id: string; name: string; }
 interface Product { id: string; name: string; hsn?: string | null; unit: string; gstPercent: number; purchaseRate: number; sellingRate: number; currentStock: number; }
@@ -25,6 +26,7 @@ interface Invoice {
   subtotal: number; taxAmount: number; totalAmount: number;
   paidAmount: number; status: string; notes?: string | null;
   vendor?: { name: string; gstin?: string | null; phone?: string | null; address?: string | null; city?: string | null } | null;
+  facility?: { name: string; address?: string | null } | null;
   items: { description: string; quantity: number; rate: number; amount: number; gstPercent: number; gstAmount: number; }[];
 }
 
@@ -298,77 +300,8 @@ export default function PurchasesPage() {
         </CardContent>
       </Card>
 
-      {/* Invoice Detail Popup */}
       {viewInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewInvoice(null)}>
-          <div className="bg-[var(--card)] text-[var(--card-foreground)] rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
-              <div>
-                <h3 className="text-lg font-bold">{viewInvoice.invoiceNumber}</h3>
-                <p className="text-sm text-[var(--muted-foreground)]">
-                  {new Date(viewInvoice.date).toLocaleDateString("en-IN")}
-                  {viewInvoice.dueDate && <> &middot; Due: {new Date(viewInvoice.dueDate).toLocaleDateString("en-IN")}</>}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <Badge variant={viewInvoice.status === "PAID" ? "paid" : viewInvoice.status === "PARTIAL" ? "partial" : "unpaid"}>
-                  {viewInvoice.status}
-                </Badge>
-                <Button variant="ghost" size="icon" onClick={() => setViewInvoice(null)}><X className="h-4 w-4" /></Button>
-              </div>
-            </div>
-
-            {viewInvoice.vendor && (
-              <div className="px-6 pt-4">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Vendor</p>
-                <p className="font-semibold">{viewInvoice.vendor.name}</p>
-                {viewInvoice.vendor.gstin && <p className="text-xs text-[var(--muted-foreground)]">GSTIN: {viewInvoice.vendor.gstin}</p>}
-                {viewInvoice.vendor.phone && <p className="text-xs text-[var(--muted-foreground)]">Phone: {viewInvoice.vendor.phone}</p>}
-                {viewInvoice.vendor.address && <p className="text-xs text-[var(--muted-foreground)]">{viewInvoice.vendor.address}{viewInvoice.vendor.city ? `, ${viewInvoice.vendor.city}` : ""}</p>}
-              </div>
-            )}
-
-            <div className="p-6">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-[var(--muted-foreground)]">
-                    <th className="text-left py-2 font-medium">#</th>
-                    <th className="text-left py-2 font-medium">Description</th>
-                    <th className="text-right py-2 font-medium">Qty</th>
-                    <th className="text-right py-2 font-medium">Rate</th>
-                    <th className="text-right py-2 font-medium">GST %</th>
-                    <th className="text-right py-2 font-medium">GST Amt</th>
-                    <th className="text-right py-2 font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {viewInvoice.items.map((item, i) => (
-                    <tr key={i} className="border-b border-[var(--border)] last:border-0">
-                      <td className="py-2 text-[var(--muted-foreground)]">{i + 1}</td>
-                      <td className="py-2">{item.description}</td>
-                      <td className="py-2 text-right">{item.quantity}</td>
-                      <td className="py-2 text-right">{fmt(item.rate)}</td>
-                      <td className="py-2 text-right">{item.gstPercent}%</td>
-                      <td className="py-2 text-right">{fmt(item.gstAmount)}</td>
-                      <td className="py-2 text-right font-medium">{fmt(item.amount + item.gstAmount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-6 pb-6 space-y-1 border-t border-[var(--border)] pt-4">
-              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Subtotal</span><span>{fmt(viewInvoice.subtotal)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Tax (GST)</span><span>{fmt(viewInvoice.taxAmount)}</span></div>
-              <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2 mt-2"><span>Total</span><span>{fmt(viewInvoice.totalAmount)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Paid</span><span className="text-green-600">{fmt(viewInvoice.paidAmount)}</span></div>
-              {viewInvoice.totalAmount - viewInvoice.paidAmount > 0 && (
-                <div className="flex justify-between text-sm font-medium"><span className="text-[var(--muted-foreground)]">Balance Due</span><span className="text-red-600">{fmt(viewInvoice.totalAmount - viewInvoice.paidAmount)}</span></div>
-              )}
-              {viewInvoice.notes && <p className="text-xs text-[var(--muted-foreground)] pt-2">Notes: {viewInvoice.notes}</p>}
-            </div>
-          </div>
-        </div>
+        <InvoiceDetailModal invoice={viewInvoice} onClose={() => setViewInvoice(null)} />
       )}
     </div>
   );
