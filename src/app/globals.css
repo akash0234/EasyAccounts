@@ -135,9 +135,9 @@ body {
   padding-left: 22px;
   padding-right: 22px;
   padding-bottom: 2.5rem;
-  min-height: 100vh;
+  min-height: 100%;
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
-  @apply min-w-0 bg-slate-100 flex-1;
+  @apply min-w-0 bg-slate-100 flex flex-1 min-h-0 flex-col overflow-hidden;
 }
 
 .rubick-content::before {
@@ -297,7 +297,7 @@ body {
 }
 
 .rubick-shell {
-  min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow-x: clip;
   background:
@@ -331,7 +331,7 @@ body {
 }
 
 .rubick-page {
-  @apply flex flex-col gap-6 py-6;
+  @apply flex flex-1 min-h-0 flex-col gap-6 overflow-y-auto overflow-x-hidden py-6 max-h-[calc(100vh-135px)];
 }
 
 .rubick-eyebrow {
