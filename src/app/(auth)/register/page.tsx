@@ -22,6 +22,7 @@ export default function RegisterPage() {
       name: formData.get("name"),
       email: formData.get("email"),
       password: formData.get("password"),
+      organizationName: formData.get("organizationName"),
       companyName: formData.get("companyName"),
     };
 
@@ -50,8 +51,8 @@ export default function RegisterPage() {
             <div className="w-12 h-12 rounded-xl bg-rubick-primary/10 flex items-center justify-center mx-auto mb-3">
               <span className="text-rubick-primary font-bold text-lg">EA</span>
             </div>
-            <h1 className="text-xl font-bold text-slate-800">Register your Organisation</h1>
-            <p className="text-sm text-slate-500 mt-1">Create an admin account for your business</p>
+            <h1 className="text-xl font-bold text-slate-800">Create your organization</h1>
+            <p className="text-sm text-slate-500 mt-1">Set up the owner account and your first company workspace</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -73,11 +74,20 @@ export default function RegisterPage() {
               <Input id="password" name="password" type="password" required minLength={6} placeholder="Min 6 characters" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="companyName">Organisation Name</Label>
-              <Input id="companyName" name="companyName" required placeholder="Acme Distributors" />
+              <Label htmlFor="organizationName">Organization Name</Label>
+              <Input
+                id="organizationName"
+                name="organizationName"
+                required
+                placeholder="Acme Group"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="companyName">First Company Name</Label>
+              <Input id="companyName" name="companyName" required placeholder="Acme Distributors Pvt Ltd" />
             </div>
             <Button type="submit" className="w-full mt-2" disabled={loading}>
-              {loading ? "Creating..." : "Register Organisation"}
+              {loading ? "Creating..." : "Create Organization"}
             </Button>
             <p className="text-sm text-center text-slate-500">
               Already have an account?{" "}

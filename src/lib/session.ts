@@ -12,14 +12,31 @@ export async function getSession() {
 export async function getCompanyId() {
   const session = await getSession();
   if (!session.user.companyId) {
-    redirect("/setup");
+    throw new Error("No active company selected");
   }
   return session.user.companyId;
 }
 
-export async function requireRole(...roles: string[]) {
+export async function getOrganizationId() {
   const session = await getSession();
-  const userRole = session.user.role;
+  if (!session.user.organizationId) {
+    throw new Error("No organization found");
+  }
+  return session.user.organizationId;
+}
+
+export async function requireCompanyRole(...roles: string[]) {
+  const session = await getSession();
+  const userRole = session.user.companyRole;
+  if (!userRole || !roles.includes(userRole)) {
+    throw new Error("Forbidden: insufficient role");
+  }
+  return session;
+}
+
+export async function requireOrganizationRole(...roles: string[]) {
+  const session = await getSession();
+  const userRole = session.user.organizationRole;
   if (!userRole || !roles.includes(userRole)) {
     throw new Error("Forbidden: insufficient role");
   }

@@ -5,12 +5,33 @@ export const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  companyName: z.string().min(2, "Organisation name required"),
+  organizationName: z.string().min(2, "Organization name required"),
+  companyName: z.string().min(2, "Company name required"),
 });
 
 export const loginSchema = z.object({
   email: z.string().email("Invalid email"),
   password: z.string().min(1, "Password required"),
+});
+
+export const organizationCompanySchema = z.object({
+  name: z.string().min(2, "Company name required"),
+  gstin: z
+    .string()
+    .regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, "Invalid GSTIN")
+    .optional()
+    .or(z.literal("")),
+  pan: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+});
+
+export const organizationUserSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Invalid email"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  companyId: z.string().min(1, "Company is required"),
+  role: z.enum(["ADMIN", "USER"]).default("USER"),
 });
 
 // Company
@@ -94,8 +115,34 @@ export const invoiceSchema = z.object({
   customerId: z.string().optional(),
   vendorId: z.string().optional(),
   facilityId: z.string().optional(),
+  discountEnabled: z.boolean().optional().default(false),
+  discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
+  discountAmount: z.coerce.number().min(0).optional().default(0),
   items: z.array(invoiceItemSchema).min(1, "At least one item required"),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (!data.discountEnabled) {
+    return;
+  }
+
+  const invalidPercent = data.discountPercent < 0 || data.discountPercent > 100;
+  const invalidAmount = data.discountAmount < 0;
+
+  if (invalidPercent) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Discount percentage must be between 0 and 100",
+      path: ["discountPercent"],
+    });
+  }
+
+  if (invalidAmount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Discount amount cannot be negative",
+      path: ["discountAmount"],
+    });
+  }
 });
 
 // Product
@@ -105,7 +152,8 @@ export const productSchema = z.object({
   hsn: z.string().optional(),
   sku: z.string().optional(),
   unit: z.enum(["PCS", "KG", "LTR", "BOX", "MTR", "SET", "PAIR", "DOZEN", "STRIP", "BOTTLE", "TUBE", "VIAL"]).default("PCS"),
-  category: z.string().optional(),
+  categoryId: z.string().optional().or(z.literal("")),
+  subcategoryId: z.string().optional().or(z.literal("")),
   gstPercent: z.coerce.number().min(0).max(28).default(0),
   purchaseRate: z.coerce.number().min(0).default(0),
   sellingRate: z.coerce.number().min(0).default(0),

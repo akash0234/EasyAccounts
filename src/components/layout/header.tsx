@@ -71,8 +71,11 @@ export function Header() {
 
         <div className="ml-auto flex items-center gap-3">
           {session?.user?.companyName && (
-            <div className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 lg:block">
-              {session.user.companyName}
+            <div className="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-2 lg:block">
+              <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                {session.user.organizationName}
+              </div>
+              <div className="text-sm text-slate-600">{session.user.companyName}</div>
             </div>
           )}
 

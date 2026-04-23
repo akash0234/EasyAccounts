@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import Lucide from "@/base-components/lucide";
 import logoUrl from "@/assets/images/logo.svg";
 import {
   navGroups,
   matchesNavPath,
+  filterNavGroups,
+  type CompanyRole,
   type NavItem,
 } from "@/components/layout/nav-items";
 
@@ -23,8 +26,16 @@ function SidebarNavigation({
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
-  const topNavGroups = navGroups.filter((group) => group.placement !== "bottom");
-  const bottomNavGroups = navGroups.filter(
+  const { data: session } = useSession();
+  const companyRole = (session?.user?.companyRole ?? null) as CompanyRole | null;
+  const visibleGroups = useMemo(
+    () => filterNavGroups(navGroups, companyRole),
+    [companyRole]
+  );
+  const topNavGroups = visibleGroups.filter(
+    (group) => group.placement !== "bottom"
+  );
+  const bottomNavGroups = visibleGroups.filter(
     (group) => group.placement === "bottom"
   );
   let animationIndex = 0;
@@ -182,7 +193,7 @@ function SidebarNavigation({
     );
   }
 
-  function renderGroups(groups: typeof navGroups) {
+  function renderGroups(groups: ReturnType<typeof filterNavGroups>) {
     return groups.map((group) => (
       <div key={group.label} className={`mb-5 ` + group.label}>
         <div

@@ -15,6 +15,7 @@ export async function GET() {
 
   const data = await db.query.products.findMany({
     where: eq(products.companyId, session.user.companyId),
+    with: { category: true, subcategory: true },
     orderBy: (p, { desc }) => [desc(p.createdAt)],
   });
 
@@ -56,13 +57,18 @@ export async function POST(req: NextRequest) {
 
   const companyId = session.user.companyId;
   const code = generateCode(CODE_PREFIX.PRODUCT);
+  const payload = {
+    ...parsed.data,
+    categoryId: parsed.data.categoryId || null,
+    subcategoryId: parsed.data.subcategoryId || null,
+  };
 
   const [product] = await db
     .insert(products)
     .values({
       companyId,
       code,
-      ...parsed.data,
+      ...payload,
       currentStock: parsed.data.openingStock || 0,
       imageUrl: parsed.data.imageUrl || null,
     })

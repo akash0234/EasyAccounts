@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,10 @@ interface Product {
   hsn: string | null;
   sku: string | null;
   unit: string;
-  category: string | null;
+  categoryId: string | null;
+  subcategoryId: string | null;
+  category?: { id: string; name: string } | null;
+  subcategory?: { id: string; name: string; categoryId: string } | null;
   gstPercent: number;
   purchaseRate: number;
   sellingRate: number;
@@ -43,16 +46,30 @@ interface Product {
   facilityStock?: FacilityStockItem[];
 }
 
+interface CategoryOption {
+  id: string;
+  name: string;
+  subcategories: { id: string; name: string; categoryId: string }[];
+}
+
+interface SubcategoryOption {
+  id: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+}
+
 const UNITS = ["PCS", "KG", "LTR", "BOX", "MTR", "SET", "PAIR", "DOZEN", "STRIP", "BOTTLE", "TUBE", "VIAL"];
 
 const defaultForm = {
   name: "", description: "", hsn: "", sku: "", unit: "PCS",
-  category: "", gstPercent: 0, purchaseRate: 0, sellingRate: 0,
+  categoryId: "", subcategoryId: "", gstPercent: 0, purchaseRate: 0, sellingRate: 0,
   openingStock: 0, reorderLevel: 0, imageUrl: "",
 };
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,6 +78,8 @@ export default function InventoryPage() {
   const [selectedProduct, setSelectedProduct] = useState<InventoryStockProduct | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({ ...defaultForm });
+  const [subcategorySearch, setSubcategorySearch] = useState("");
+  const [subcategoryOpen, setSubcategoryOpen] = useState(false);
 
   async function loadProducts() {
     const res = await fetch("/api/products");
@@ -71,9 +90,16 @@ export default function InventoryPage() {
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      const res = await fetch("/api/products");
-      const data = await res.json();
-      if (!cancelled && Array.isArray(data)) setProducts(data);
+      const [productsRes, categoriesRes] = await Promise.all([
+        fetch("/api/products"),
+        fetch("/api/products/categories"),
+      ]);
+      const [productsData, categoriesData] = await Promise.all([
+        productsRes.json(),
+        categoriesRes.json(),
+      ]);
+      if (!cancelled && Array.isArray(productsData)) setProducts(productsData);
+      if (!cancelled && Array.isArray(categoriesData)) setCategories(categoriesData);
     }
     void init();
     return () => { cancelled = true; };
@@ -84,6 +110,8 @@ export default function InventoryPage() {
     setEditingId(null);
     setShowForm(false);
     setImagePreview(null);
+    setSubcategorySearch("");
+    setSubcategoryOpen(false);
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -124,12 +152,14 @@ export default function InventoryPage() {
   function handleEdit(p: Product) {
     setFormData({
       name: p.name, description: p.description || "", hsn: p.hsn || "",
-      sku: p.sku || "", unit: p.unit, category: p.category || "",
+      sku: p.sku || "", unit: p.unit, categoryId: p.categoryId || "", subcategoryId: p.subcategoryId || "",
       gstPercent: p.gstPercent, purchaseRate: p.purchaseRate,
       sellingRate: p.sellingRate, openingStock: p.openingStock,
       reorderLevel: p.reorderLevel, imageUrl: p.imageUrl || "",
     });
     setImagePreview(p.imageUrl);
+    setSubcategorySearch(p.subcategory?.name || "");
+    setSubcategoryOpen(false);
     setEditingId(p.id);
     setShowForm(true);
   }
@@ -142,6 +172,40 @@ export default function InventoryPage() {
   );
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
+  const subcategoryOptions = useMemo<SubcategoryOption[]>(
+    () =>
+      categories.flatMap((category) =>
+        category.subcategories.map((subcategory) => ({
+          id: subcategory.id,
+          name: subcategory.name,
+          categoryId: category.id,
+          categoryName: category.name,
+        }))
+      ),
+    [categories]
+  );
+  const filteredSubcategories = useMemo(
+    () =>
+      subcategoryOptions.filter((subcategory) => {
+        const query = subcategorySearch.trim().toLowerCase();
+        if (!query) return true;
+        return (
+          subcategory.name.toLowerCase().includes(query) ||
+          subcategory.categoryName.toLowerCase().includes(query)
+        );
+      }),
+    [subcategoryOptions, subcategorySearch]
+  );
+
+  function handleSubcategorySelect(subcategory: SubcategoryOption) {
+    setFormData({
+      ...formData,
+      categoryId: subcategory.categoryId,
+      subcategoryId: subcategory.id,
+    });
+    setSubcategorySearch(subcategory.name);
+    setSubcategoryOpen(false);
+  }
 
   return (
     <div>
@@ -174,8 +238,48 @@ export default function InventoryPage() {
                   <Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} />
                 </div>
                 <div>
-                  <Label>Category</Label>
-                  <Input value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} />
+                  <Label>Subcategory</Label>
+                  <div className="relative">
+                    <Input
+                      value={subcategorySearch}
+                      onChange={(e) => {
+                        setSubcategorySearch(e.target.value);
+                        setSubcategoryOpen(true);
+                        setFormData({
+                          ...formData,
+                          categoryId: "",
+                          subcategoryId: "",
+                        });
+                      }}
+                      onFocus={() => setSubcategoryOpen(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => {
+                          setSubcategoryOpen(false);
+                          if (!formData.subcategoryId) {
+                            setSubcategorySearch("");
+                          }
+                        }, 150);
+                      }}
+                      placeholder="Search subcategory"
+                    />
+                    {subcategoryOpen && filteredSubcategories.length > 0 && (
+                      <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
+                        {filteredSubcategories.map((subcategory) => (
+                          <button
+                            key={subcategory.id}
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
+                            onClick={() => handleSubcategorySelect(subcategory)}
+                          >
+                            <span>{subcategory.name}</span>
+                            <span className="text-xs text-[var(--muted-foreground)]">
+                              {subcategory.categoryName}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -185,6 +289,16 @@ export default function InventoryPage() {
                   <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })}>
                     {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <Input
+                    value={
+                      subcategoryOptions.find((subcategory) => subcategory.id === formData.subcategoryId)?.categoryName || ""
+                    }
+                    placeholder="Auto-filled from subcategory"
+                    readOnly
+                  />
                 </div>
                 <div>
                   <Label>GST %</Label>
@@ -210,10 +324,6 @@ export default function InventoryPage() {
                   <Input type="number" value={formData.reorderLevel} onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })} min={0} />
                 </div>
                 <div>
-                  <Label>Description</Label>
-                  <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
-                </div>
-                <div>
                   <Label>Product Image</Label>
                   <div className="flex items-center gap-2">
                     <label className="flex items-center gap-1 cursor-pointer text-sm border rounded-md px-3 py-1.5 hover:bg-accent">
@@ -225,6 +335,10 @@ export default function InventoryPage() {
                       <img src={imagePreview} alt="Preview" className="h-9 w-9 rounded object-cover border" />
                     )}
                   </div>
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <Input value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
                 </div>
               </div>
 
@@ -307,9 +421,9 @@ export default function InventoryPage() {
                   </TableCell>
                   <TableCell className="align-middle font-medium">
                     {p.name}
-                    {p.category ? (
+                    {(p.subcategory?.name || p.category?.name) ? (
                       <span className="ml-2 text-xs text-slate-400">
-                        {p.category}
+                        {p.subcategory?.name || p.category?.name}
                       </span>
                     ) : null}
                   </TableCell>

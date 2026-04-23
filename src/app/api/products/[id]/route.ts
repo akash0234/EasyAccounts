@@ -20,7 +20,7 @@ export async function GET(
       eq(products.id, id),
       eq(products.companyId, session.user.companyId)
     ),
-    with: { stockMovements: true },
+    with: { stockMovements: true, category: true, subcategory: true },
   });
 
   if (!product) {
@@ -49,9 +49,15 @@ export async function PUT(
     );
   }
 
+  const payload = {
+    ...parsed.data,
+    categoryId: parsed.data.categoryId || null,
+    subcategoryId: parsed.data.subcategoryId || null,
+  };
+
   const [updated] = await db
     .update(products)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set({ ...payload, updatedAt: new Date() })
     .where(
       and(eq(products.id, id), eq(products.companyId, session.user.companyId))
     )

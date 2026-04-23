@@ -22,7 +22,7 @@ interface Facility { id: string; name: string; code: string | null; }
 interface InvoiceItem { description: string; productId?: string; quantity: number; rate: number; gstPercent: number; batchNo: string; slNo: string; expiryDate: string; }
 interface Invoice {
   id: string; invoiceNumber: string; date: string; dueDate?: string | null;
-  subtotal: number; taxAmount: number; totalAmount: number;
+  subtotal: number; taxAmount: number; discountPercent?: number; discountAmount?: number; totalAmount: number;
   paidAmount: number; status: string; notes?: string | null;
   customer?: { name: string; gstin?: string | null; phone?: string | null; billingAddress?: string | null; city?: string | null } | null;
   items: { description: string; quantity: number; rate: number; amount: number; gstPercent: number; gstAmount: number; }[];
@@ -42,6 +42,9 @@ export default function SalesPage() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [discountEnabled, setDiscountEnabled] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState("0");
+  const [discountAmount, setDiscountAmount] = useState("0");
   const [items, setItems] = useState<InvoiceItem[]>([{ ...emptyItem }]);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
 
@@ -118,13 +121,65 @@ export default function SalesPage() {
     }, 0);
   }
 
+  function formatDecimal(value: number) {
+    return Number.isFinite(value) ? value.toFixed(2).replace(/\.00$/, "") : "0";
+  }
+
+  function sanitizeNumberInput(value: string) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  const grossTotal = calcTotal();
+  const normalizedDiscountAmount = discountEnabled
+    ? Math.min(Math.max(sanitizeNumberInput(discountAmount), 0), grossTotal)
+    : 0;
+  const normalizedDiscountPercent =
+    discountEnabled && grossTotal > 0
+      ? Math.min(Math.max((normalizedDiscountAmount / grossTotal) * 100, 0), 100)
+      : 0;
+  const finalTotal = grossTotal - normalizedDiscountAmount;
+
+  function handleDiscountEnabledChange(enabled: boolean) {
+    setDiscountEnabled(enabled);
+    if (!enabled) {
+      setDiscountPercent("0");
+      setDiscountAmount("0");
+    }
+  }
+
+  function handleDiscountPercentChange(value: string) {
+    setDiscountPercent(value);
+    const percent = Math.min(Math.max(sanitizeNumberInput(value), 0), 100);
+    const amount = grossTotal > 0 ? (grossTotal * percent) / 100 : 0;
+    setDiscountAmount(formatDecimal(amount));
+  }
+
+  function handleDiscountAmountChange(value: string) {
+    setDiscountAmount(value);
+    const amount = Math.min(Math.max(sanitizeNumberInput(value), 0), grossTotal);
+    const percent = grossTotal > 0 ? (amount / grossTotal) * 100 : 0;
+    setDiscountPercent(formatDecimal(percent));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     const res = await fetch("/api/invoices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "SALES", date, dueDate, customerId, facilityId, items, notes }),
+      body: JSON.stringify({
+        type: "SALES",
+        date,
+        dueDate,
+        customerId,
+        facilityId,
+        items,
+        notes,
+        discountEnabled,
+        discountPercent: normalizedDiscountPercent,
+        discountAmount: normalizedDiscountAmount,
+      }),
     });
     setLoading(false);
     if (res.ok) {
@@ -133,6 +188,9 @@ export default function SalesPage() {
       setCustomerId("");
       setFacilityId("");
       setNotes("");
+      setDiscountEnabled(false);
+      setDiscountPercent("0");
+      setDiscountAmount("0");
       load();
     }
   }
@@ -172,6 +230,53 @@ export default function SalesPage() {
                 <div><Label>Date *</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
                 <div><Label>Due Date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
                 <div><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    id="sales-discount-enabled"
+                    type="checkbox"
+                    checked={discountEnabled}
+                    onChange={(e) => handleDiscountEnabledChange(e.target.checked)}
+                    className="h-4 w-4 rounded border border-input"
+                  />
+                  <Label htmlFor="sales-discount-enabled" className="cursor-pointer">
+                    Apply discount
+                  </Label>
+                </div>
+
+                {discountEnabled && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <Label>Discount %</Label>
+                      <Input
+                        type="number"
+                        value={discountPercent}
+                        onChange={(e) => handleDiscountPercentChange(e.target.value)}
+                        min={0}
+                        max={100}
+                        step={0.01}
+                      />
+                    </div>
+                    <div>
+                      <Label>Discount Value</Label>
+                      <Input
+                        type="number"
+                        value={discountAmount}
+                        onChange={(e) => handleDiscountAmountChange(e.target.value)}
+                        min={0}
+                        max={grossTotal}
+                        step={0.01}
+                      />
+                    </div>
+                    <div className="flex flex-col justify-end">
+                      <div className="rounded-md bg-[var(--muted)] px-3 py-2 text-sm">
+                        Discount Applied: <span className="font-semibold">{fmt(normalizedDiscountAmount)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -214,7 +319,15 @@ export default function SalesPage() {
               </div>
 
               <div className="flex justify-between items-center pt-4 border-t">
-                <div className="text-lg font-bold">Total: {fmt(calcTotal())}</div>
+                <div className="space-y-1 text-right">
+                  <div className="text-sm text-[var(--muted-foreground)]">Gross Total: {fmt(grossTotal)}</div>
+                  {discountEnabled && normalizedDiscountAmount > 0 && (
+                    <div className="text-sm text-green-700">
+                      Discount: -{fmt(normalizedDiscountAmount)} ({formatDecimal(normalizedDiscountPercent)}%)
+                    </div>
+                  )}
+                  <div className="text-lg font-bold">Total: {fmt(finalTotal)}</div>
+                </div>
                 <Button type="submit" disabled={loading}>{loading ? "Creating..." : "Create Invoice"}</Button>
               </div>
             </form>
@@ -370,6 +483,14 @@ export default function SalesPage() {
             <div className="px-6 pb-6 space-y-1 border-t border-[var(--border)] pt-4">
               <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Subtotal</span><span>{fmt(viewInvoice.subtotal)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Tax (GST)</span><span>{fmt(viewInvoice.taxAmount)}</span></div>
+              {(viewInvoice.discountAmount ?? 0) > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-[var(--muted-foreground)]">
+                    Discount{(viewInvoice.discountPercent ?? 0) > 0 ? ` (${(viewInvoice.discountPercent ?? 0).toFixed(2).replace(/\.00$/, "")}%)` : ""}
+                  </span>
+                  <span className="text-green-700">-{fmt(viewInvoice.discountAmount ?? 0)}</span>
+                </div>
+              )}
               <div className="flex justify-between font-bold text-base border-t border-[var(--border)] pt-2 mt-2"><span>Total</span><span>{fmt(viewInvoice.totalAmount)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-[var(--muted-foreground)]">Paid</span><span className="text-green-600">{fmt(viewInvoice.paidAmount)}</span></div>
               {viewInvoice.totalAmount - viewInvoice.paidAmount > 0 && (

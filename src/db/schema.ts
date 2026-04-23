@@ -15,6 +15,12 @@ import { relations } from "drizzle-orm";
 // ============================================
 
 export const roleEnum = pgEnum("role", ["ADMIN", "USER"]);
+export const organizationRoleEnum = pgEnum("organization_role", [
+  "OWNER",
+  "ADMIN",
+  "USER",
+]);
+export const companyRoleEnum = pgEnum("company_role", ["ADMIN", "USER"]);
 export const ledgerAccountTypeEnum = pgEnum("ledger_account_type", [
   "CUSTOMER",
   "VENDOR",
@@ -79,10 +85,42 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const organizations = pgTable("organizations", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    role: organizationRoleEnum("role").default("USER").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("user_organization_idx").on(table.userId, table.organizationId),
+  ]
+);
+
 export const companies = pgTable("companies", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   gstin: text("gstin"),
   pan: text("pan"),
@@ -108,7 +146,7 @@ export const companyMembers = pgTable(
     companyId: text("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "cascade" }),
-    role: roleEnum("role").default("ADMIN").notNull(),
+    role: companyRoleEnum("role").default("ADMIN").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [uniqueIndex("user_company_idx").on(table.userId, table.companyId)]
@@ -280,6 +318,8 @@ export const invoices = pgTable(
     facilityId: text("facility_id").references(() => facilities.id),
     subtotal: real("subtotal").default(0).notNull(),
     taxAmount: real("tax_amount").default(0).notNull(),
+    discountPercent: real("discount_percent").default(0).notNull(),
+    discountAmount: real("discount_amount").default(0).notNull(),
     totalAmount: real("total_amount").default(0).notNull(),
     paidAmount: real("paid_amount").default(0).notNull(),
     status: invoiceStatusEnum("status").default("UNPAID").notNull(),
@@ -531,10 +571,34 @@ export const facilityStock = pgTable(
 // ============================================
 
 export const usersRelations = relations(users, ({ many }) => ({
+  organizationMemberships: many(organizationMembers),
   memberships: many(companyMembers),
 }));
 
-export const companiesRelations = relations(companies, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  members: many(organizationMembers),
+  companies: many(companies),
+}));
+
+export const organizationMembersRelations = relations(
+  organizationMembers,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [organizationMembers.userId],
+      references: [users.id],
+    }),
+    organization: one(organizations, {
+      fields: [organizationMembers.organizationId],
+      references: [organizations.id],
+    }),
+  })
+);
+
+export const companiesRelations = relations(companies, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [companies.organizationId],
+    references: [organizations.id],
+  }),
   members: many(companyMembers),
   financialYears: many(financialYears),
   customers: many(customers),

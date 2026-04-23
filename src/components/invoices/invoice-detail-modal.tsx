@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { Download, X } from "lucide-react";
 
 export interface InvoiceDetailItem {
   description: string;
@@ -28,6 +28,7 @@ export interface InvoiceDetailFacility {
 }
 
 export interface InvoiceDetailData {
+  id?: string;
   invoiceNumber: string;
   date: string;
   dueDate?: string | null;
@@ -46,9 +47,17 @@ export interface InvoiceDetailData {
 interface InvoiceDetailModalProps {
   invoice: InvoiceDetailData;
   onClose: () => void;
+  /** Optional callback — shown as a "Download PDF" button when provided. */
+  onDownloadPdf?: () => void;
+  downloadLabel?: string;
 }
 
-export function InvoiceDetailModal({ invoice, onClose }: InvoiceDetailModalProps) {
+export function InvoiceDetailModal({
+  invoice,
+  onClose,
+  onDownloadPdf,
+  downloadLabel = "Download PDF",
+}: InvoiceDetailModalProps) {
   const fmt = (value: number) => value.toLocaleString("en-IN", { style: "currency", currency: "INR" });
 
   return (
@@ -82,6 +91,12 @@ export function InvoiceDetailModal({ invoice, onClose }: InvoiceDetailModalProps
             >
               {invoice.status}
             </Badge>
+            {onDownloadPdf && (
+              <Button variant="outline" size="sm" onClick={onDownloadPdf}>
+                <Download className="h-4 w-4 mr-2" />
+                {downloadLabel}
+              </Button>
+            )}
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="h-4 w-4" />
             </Button>

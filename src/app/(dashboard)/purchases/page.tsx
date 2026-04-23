@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye } from "lucide-react";
+import { Plus, X, Trash2, Eye, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 
@@ -133,6 +133,28 @@ export default function PurchasesPage() {
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
 
+
+  async function downloadPdf(invoiceId: string, invoiceNumber: string) {
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/pdf`);
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || `Failed to generate PDF (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `purchase-invoice-${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to download PDF");
+    }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -245,8 +267,8 @@ export default function PurchasesPage() {
                 <TableHeader className="bg-rubick-primary text-center text-white">
                   Status
                 </TableHeader>
-                <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white w-[5rem]">
-                  View
+                <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white w-[8rem]">
+                  Actions
                 </TableHeader>
               </TableRow>
             </TableHead>
@@ -282,9 +304,24 @@ export default function PurchasesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="align-middle text-center">
-                    <Button variant="ghost" size="icon" onClick={() => setViewInvoice(inv)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="View"
+                        onClick={() => setViewInvoice(inv)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Download PDF"
+                        onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -301,7 +338,13 @@ export default function PurchasesPage() {
       </Card>
 
       {viewInvoice && (
-        <InvoiceDetailModal invoice={viewInvoice} onClose={() => setViewInvoice(null)} />
+        <InvoiceDetailModal
+          invoice={viewInvoice}
+          onClose={() => setViewInvoice(null)}
+          onDownloadPdf={() =>
+            downloadPdf(viewInvoice.id, viewInvoice.invoiceNumber)
+          }
+        />
       )}
     </div>
   );

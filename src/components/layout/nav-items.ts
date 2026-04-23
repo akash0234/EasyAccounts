@@ -5,12 +5,16 @@ export interface NavItem {
   icon: string;
   match?: "exact" | "prefix";
   children?: NavItem[];
+  /** If set, only users whose companyRole is in this list will see the item. */
+  requiresCompanyRole?: ("ADMIN" | "USER")[];
 }
 
 export interface NavGroup {
   label: string;
   items: NavItem[];
   placement?: "top" | "bottom";
+  /** If set, only users whose companyRole is in this list will see the group. */
+  requiresCompanyRole?: ("ADMIN" | "USER")[];
 }
 
 export const navGroups: NavGroup[] = [
@@ -95,6 +99,45 @@ export const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Reports",
+    requiresCompanyRole: ["ADMIN"],
+    items: [
+      {
+        href: "/reports",
+        label: "Reports",
+        description: "Sales, purchase, and stock analytics for admins.",
+        icon: "BarChart3",
+        requiresCompanyRole: ["ADMIN"],
+        children: [
+          {
+            href: "/reports/sales",
+            label: "Sales Report",
+            description: "Sales invoices with party, product, and GST filters.",
+            icon: "TrendingUp",
+            match: "prefix",
+            requiresCompanyRole: ["ADMIN"],
+          },
+          {
+            href: "/reports/purchase",
+            label: "Purchase Report",
+            description: "Purchase bills with vendor and HSN filters.",
+            icon: "TrendingDown",
+            match: "prefix",
+            requiresCompanyRole: ["ADMIN"],
+          },
+          {
+            href: "/reports/stock",
+            label: "Stock Transactions",
+            description: "Inward, outward, and adjustments across facilities.",
+            icon: "ArrowLeftRight",
+            match: "prefix",
+            requiresCompanyRole: ["ADMIN"],
+          },
+        ],
+      },
+    ],
+  },
+  {
     label: "Administration",
     placement: "bottom",
     items: [
@@ -111,6 +154,41 @@ export const navGroups: NavGroup[] = [
 export const navItems = navGroups.flatMap((group) =>
   group.items.flatMap((item) => (item.children ? [item, ...item.children] : [item]))
 );
+
+export type CompanyRole = "ADMIN" | "USER";
+
+function itemAllowed(item: NavItem, role?: CompanyRole | null): boolean {
+  if (!item.requiresCompanyRole) return true;
+  if (!role) return false;
+  return item.requiresCompanyRole.includes(role);
+}
+
+/** Filters nav groups and items according to the user's company role. */
+export function filterNavGroups(
+  groups: NavGroup[],
+  role?: CompanyRole | null
+): NavGroup[] {
+  const result: NavGroup[] = [];
+  for (const group of groups) {
+    if (group.requiresCompanyRole) {
+      if (!role || !group.requiresCompanyRole.includes(role)) continue;
+    }
+    const items: NavItem[] = [];
+    for (const item of group.items) {
+      if (!itemAllowed(item, role)) continue;
+      if (item.children) {
+        const children = item.children.filter((c) => itemAllowed(c, role));
+        if (children.length === 0 && item.requiresCompanyRole) continue;
+        items.push({ ...item, children });
+      } else {
+        items.push(item);
+      }
+    }
+    if (items.length === 0) continue;
+    result.push({ ...group, items });
+  }
+  return result;
+}
 
 export function matchesNavPath(
   pathname: string,

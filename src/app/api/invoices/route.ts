@@ -54,7 +54,17 @@ export async function POST(req: NextRequest) {
   }
 
   const companyId = session.user.companyId;
-  const { items, date, dueDate, notes, customerId, vendorId, facilityId } = parsed.data;
+  const {
+    items,
+    date,
+    dueDate,
+    notes,
+    customerId,
+    vendorId,
+    facilityId,
+    discountEnabled,
+    discountAmount,
+  } = parsed.data;
 
   // Facility is mandatory for both purchases and sales
   if (!facilityId) {
@@ -86,7 +96,15 @@ export async function POST(req: NextRequest) {
   });
   const subtotal = computedItems.reduce((sum, i) => sum + i.amount, 0);
   const taxAmount = computedItems.reduce((sum, i) => sum + i.gstAmount, 0);
-  const totalAmount = subtotal + taxAmount;
+  const grossTotal = subtotal + taxAmount;
+  const normalizedDiscountAmount = discountEnabled
+    ? Math.min(Math.max(discountAmount, 0), grossTotal)
+    : 0;
+  const normalizedDiscountPercent =
+    discountEnabled && grossTotal > 0
+      ? (normalizedDiscountAmount / grossTotal) * 100
+      : 0;
+  const totalAmount = grossTotal - normalizedDiscountAmount;
 
   // Generate invoice code and number
   const prefix = type === "SALES" ? CODE_PREFIX.SALES_INVOICE : CODE_PREFIX.PURCHASE_INVOICE;
@@ -116,6 +134,8 @@ export async function POST(req: NextRequest) {
       facilityId: facilityId || null,
       subtotal,
       taxAmount,
+      discountPercent: normalizedDiscountPercent,
+      discountAmount: normalizedDiscountAmount,
       totalAmount,
       status: "UNPAID",
       notes: notes || null,

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
-import { users, companies, companyMembers, financialYears, ledgerAccounts } from "@/db/schema";
+import {
+  companies,
+  companyMembers,
+  organizationMembers,
+  organizations,
+  users,
+} from "@/db/schema";
+import { createDefaultFinancialYearAndLedgers } from "@/lib/organization";
 import { registerSchema } from "@/lib/validations";
 import { eq } from "drizzle-orm";
 
@@ -17,7 +24,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, companyName } = parsed.data;
+    const { name, email, password, organizationName, companyName } = parsed.data;
 
     // Check existing user
     const existing = await db.query.users.findFirst({
@@ -32,12 +39,28 @@ export async function POST(req: NextRequest) {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create user + company + membership + default FY + default ledger accounts in sequence
-    const [user] = await db.insert(users).values({ name, email, passwordHash }).returning();
+    const [user] = await db
+      .insert(users)
+      .values({ name, email, passwordHash })
+      .returning();
+
+    const [organization] = await db
+      .insert(organizations)
+      .values({ name: organizationName })
+      .returning();
+
+    await db.insert(organizationMembers).values({
+      userId: user.id,
+      organizationId: organization.id,
+      role: "OWNER",
+    });
 
     const [company] = await db
       .insert(companies)
-      .values({ name: companyName })
+      .values({
+        organizationId: organization.id,
+        name: companyName,
+      })
       .returning();
 
     await db.insert(companyMembers).values({
@@ -46,39 +69,7 @@ export async function POST(req: NextRequest) {
       role: "ADMIN",
     });
 
-    // Create default financial year (April to March)
-    const now = new Date();
-    const fyStart =
-      now.getMonth() >= 3
-        ? new Date(now.getFullYear(), 3, 1)
-        : new Date(now.getFullYear() - 1, 3, 1);
-    const fyEnd = new Date(fyStart.getFullYear() + 1, 2, 31);
-    const fyLabel = `${fyStart.getFullYear()}-${String(fyEnd.getFullYear()).slice(2)}`;
-
-    await db.insert(financialYears).values({
-      companyId: company.id,
-      label: fyLabel,
-      startDate: fyStart,
-      endDate: fyEnd,
-      isActive: true,
-    });
-
-    // Create default system ledger accounts
-    const defaultAccounts = [
-      { name: "Cash", type: "CASH" as const },
-      { name: "Bank", type: "BANK" as const },
-      { name: "Sales", type: "SALES" as const },
-      { name: "Purchase", type: "PURCHASE" as const },
-      { name: "GST", type: "GST" as const },
-    ];
-
-    await db.insert(ledgerAccounts).values(
-      defaultAccounts.map((a) => ({
-        companyId: company.id,
-        name: a.name,
-        type: a.type,
-      }))
-    );
+    await createDefaultFinancialYearAndLedgers(company.id);
 
     return NextResponse.json(
       { message: "Account created successfully" },
