@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Download, Filter, RotateCcw, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,11 +21,7 @@ import {
   formatDate,
   toCSV,
 } from "@/components/reports/report-shell";
-
-interface Facility { id: string; name: string }
-interface Product { id: string; name: string; hsn?: string | null; unit?: string }
-interface Category { id: string; name: string; subcategories?: { id: string; name: string }[] }
-interface Subcategory { id: string; name: string; categoryId: string }
+import { SearchSelect } from "@/components/ui/search-select";
 
 interface StockRow {
   id: string;
@@ -65,17 +61,18 @@ const fmtQty = (n: number) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n || 0);
 
 export default function StockReportPage() {
-  const [facilities, setFacilities] = useState<Facility[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-
   const [from, setFrom] = useState(firstOfMonth());
   const [to, setTo] = useState(today());
+
   const [productId, setProductId] = useState("");
+  const [productDisplay, setProductDisplay] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [categoryDisplay, setCategoryDisplay] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
+  const [subcategoryDisplay, setSubcategoryDisplay] = useState("");
   const [facilityId, setFacilityId] = useState("");
+  const [facilityDisplay, setFacilityDisplay] = useState("");
+
   const [type, setType] = useState("");
   const [referenceType, setReferenceType] = useState("");
   const [batchNo, setBatchNo] = useState("");
@@ -89,46 +86,9 @@ export default function StockReportPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadMasters() {
-      const [fRes, pRes, catRes] = await Promise.all([
-        fetch("/api/facilities"),
-        fetch("/api/products"),
-        fetch("/api/products/categories"),
-      ]);
-      const [fData, pData, catData] = await Promise.all([
-        fRes.json(),
-        pRes.json(),
-        catRes.json(),
-      ]);
-      if (cancelled) return;
-      if (Array.isArray(fData)) setFacilities(fData);
-      if (Array.isArray(pData)) setProducts(pData);
-      if (Array.isArray(catData)) {
-        setCategories(catData);
-        const subs: Subcategory[] = [];
-        for (const c of catData) {
-          if (Array.isArray(c.subcategories)) {
-            for (const s of c.subcategories) {
-              subs.push({ id: s.id, name: s.name, categoryId: c.id });
-            }
-          }
-        }
-        setSubcategories(subs);
-      }
-    }
-    loadMasters();
     runReport();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const filteredSubcategories = useMemo(
-    () => (categoryId ? subcategories.filter((s) => s.categoryId === categoryId) : subcategories),
-    [categoryId, subcategories]
-  );
 
   function buildQuery() {
     const params = new URLSearchParams();
@@ -173,10 +133,10 @@ export default function StockReportPage() {
   function resetFilters() {
     setFrom(firstOfMonth());
     setTo(today());
-    setProductId("");
-    setCategoryId("");
-    setSubcategoryId("");
-    setFacilityId("");
+    setProductId(""); setProductDisplay("");
+    setCategoryId(""); setCategoryDisplay("");
+    setSubcategoryId(""); setSubcategoryDisplay("");
+    setFacilityId(""); setFacilityDisplay("");
     setType("");
     setReferenceType("");
     setBatchNo("");
@@ -238,36 +198,66 @@ export default function StockReportPage() {
                 </Select>
               </Field>
               <Field label="Facility">
-                <Select value={facilityId} onChange={setFacilityId}>
-                  <option value="">All facilities</option>
-                  {facilities.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={facilityId}
+                  displayValue={facilityDisplay}
+                  endpoint="/api/facilities"
+                  placeholder="All facilities"
+                  mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                  onChange={(opt) => {
+                    setFacilityId(opt?.id ?? "");
+                    setFacilityDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="Category">
-                <Select value={categoryId} onChange={(v) => { setCategoryId(v); setSubcategoryId(""); }}>
-                  <option value="">All categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={categoryId}
+                  displayValue={categoryDisplay}
+                  endpoint="/api/products/categories"
+                  placeholder="All categories"
+                  mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                  onChange={(opt) => {
+                    setCategoryId(opt?.id ?? "");
+                    setCategoryDisplay(opt?.label ?? "");
+                    setSubcategoryId("");
+                    setSubcategoryDisplay("");
+                  }}
+                />
               </Field>
               <Field label="Subcategory">
-                <Select value={subcategoryId} onChange={setSubcategoryId}>
-                  <option value="">All subcategories</option>
-                  {filteredSubcategories.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={subcategoryId}
+                  displayValue={subcategoryDisplay}
+                  endpoint="/api/products/subcategories"
+                  placeholder="All subcategories"
+                  mapResult={(r: { id: string; name: string; categoryName: string }) => ({
+                    id: r.id,
+                    label: r.name,
+                    hint: r.categoryName,
+                  })}
+                  onChange={(opt) => {
+                    setSubcategoryId(opt?.id ?? "");
+                    setSubcategoryDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="Product">
-                <Select value={productId} onChange={setProductId}>
-                  <option value="">All products</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={productId}
+                  displayValue={productDisplay}
+                  endpoint="/api/products"
+                  placeholder="All products"
+                  mapResult={(r: { id: string; name: string; hsn: string | null }) => ({
+                    id: r.id,
+                    label: r.name,
+                    hint: r.hsn ?? undefined,
+                  })}
+                  onChange={(opt) => {
+                    setProductId(opt?.id ?? "");
+                    setProductDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="HSN">
                 <Input value={hsn} onChange={(e) => setHsn(e.target.value)} placeholder="e.g. 8528" />
@@ -333,19 +323,29 @@ export default function StockReportPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
+            <Table className="min-w-[64rem] table-fixed">
+              <colgroup>
+                <col className="w-[7rem]" />
+                <col className="w-[6rem]" />
+                <col />
+                <col className="w-[8rem]" />
+                <col className="w-[6rem]" />
+                <col className="w-[7rem]" />
+                <col className="w-[7rem]" />
+                <col className="w-[14rem]" />
+              </colgroup>
+              <TableHead>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Facility</TableHead>
-                  <TableHead>Batch</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Qty</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHeader className="rounded-l-md bg-rubick-primary text-white">Date</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Type</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Product</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Facility</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Batch</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Reference</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">Qty</TableHeader>
+                  <TableHeader className="rounded-r-md bg-rubick-primary text-white">Notes</TableHeader>
                 </TableRow>
-              </TableHeader>
+              </TableHead>
               <TableBody>
                 {rows.length === 0 ? (
                   <TableRow>
@@ -356,23 +356,23 @@ export default function StockReportPage() {
                 ) : (
                   rows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell>{formatDate(r.createdAt)}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap align-middle">{formatDate(r.createdAt)}</TableCell>
+                      <TableCell className="align-middle">
                         <TypeBadge type={r.type} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-middle">
                         <div className="font-medium">{r.product?.name ?? "—"}</div>
                         {r.product?.hsn && (
                           <div className="text-xs text-slate-500">HSN {r.product.hsn}</div>
                         )}
                       </TableCell>
-                      <TableCell>{r.facility?.name ?? "—"}</TableCell>
-                      <TableCell>{r.batchNo ?? "—"}</TableCell>
-                      <TableCell>{r.referenceType ?? "—"}</TableCell>
-                      <TableCell className="text-right font-semibold">
+                      <TableCell className="align-middle">{r.facility?.name ?? "—"}</TableCell>
+                      <TableCell className="align-middle">{r.batchNo ?? "—"}</TableCell>
+                      <TableCell className="align-middle">{r.referenceType ?? "—"}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right font-semibold">
                         {fmtQty(r.quantity)} {r.product?.unit ?? ""}
                       </TableCell>
-                      <TableCell className="max-w-[220px] truncate text-xs text-slate-500">
+                      <TableCell className="max-w-[220px] truncate align-middle text-xs text-slate-500">
                         {r.notes ?? "—"}
                       </TableCell>
                     </TableRow>
@@ -486,15 +486,18 @@ function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
     <Card>
       <CardContent className="p-0">
         <Table>
-          <TableHeader>
+          <TableHead>
             <TableRow>
-              {columns.map((c) => (
-                <TableHead key={c.key} className={c.align === "right" ? "text-right" : undefined}>
+              {columns.map((c, i) => (
+                <TableHeader
+                  key={c.key}
+                  className={`bg-rubick-primary text-white ${c.align === "right" ? "text-right" : ""} ${i === 0 ? "rounded-l-md" : ""} ${i === columns.length - 1 ? "rounded-r-md" : ""}`}
+                >
                   {c.label}
-                </TableHead>
+                </TableHeader>
               ))}
             </TableRow>
-          </TableHeader>
+          </TableHead>
           <TableBody>
             {rows.map((r, i) => (
               <TableRow key={i}>
@@ -506,7 +509,7 @@ function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
                     ? "—"
                     : String(v);
                   return (
-                    <TableCell key={c.key} className={c.align === "right" ? "text-right" : undefined}>
+                    <TableCell key={c.key} className={c.align === "right" ? "align-middle text-right" : "align-middle"}>
                       {display}
                     </TableCell>
                   );

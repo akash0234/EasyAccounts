@@ -20,7 +20,10 @@ export async function GET(
       eq(customers.id, id),
       eq(customers.companyId, session.user.companyId)
     ),
-    with: { ledgerAccount: { with: { entries: true } } },
+    with: {
+      ledgerAccount: { with: { entries: true } },
+      addresses: true,
+    },
   });
 
   if (!customer) {

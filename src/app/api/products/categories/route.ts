@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { categories, subcategories, products } from "@/db/schema";
+import { categories, products } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, ilike, sql } from "drizzle-orm";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.companyId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const url = new URL(req.url);
+  const q = (url.searchParams.get("q") || "").trim();
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? Math.min(Number(limitParam) || 50, 200) : undefined;
+
+  const whereClauses = [eq(categories.companyId, session.user.companyId)];
+  if (q) whereClauses.push(ilike(categories.name, `%${q}%`));
+
   const cats = await db.query.categories.findMany({
-    where: eq(categories.companyId, session.user.companyId),
+    where: and(...whereClauses),
     with: { subcategories: true },
     orderBy: (c, { asc }) => [asc(c.name)],
+    limit,
   });
 
   // Count products per category and subcategory

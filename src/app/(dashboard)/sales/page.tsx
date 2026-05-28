@@ -13,22 +13,95 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye } from "lucide-react";
+import { Plus, X, Trash2, Eye, MapPin, Receipt } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AddressPickerModal,
+  formatAddressSnapshot,
+  type CustomerAddress,
+} from "@/components/customers/address-picker-modal";
+import {
+  AdditionalChargesModal,
+  type AdditionalCharge,
+} from "@/components/invoices/additional-charges-modal";
+import { SearchSelect } from "@/components/ui/search-select";
 
-interface Customer { id: string; name: string; }
-interface Product { id: string; name: string; hsn?: string | null; unit: string; gstPercent: number; purchaseRate: number; sellingRate: number; currentStock: number; }
+interface Customer {
+  id: string;
+  name: string;
+  addresses?: CustomerAddress[];
+}
+interface Product {
+  id: string;
+  name: string;
+  hsn?: string | null;
+  unit: string;
+  gstPercent: number;
+  purchaseRate: number;
+  sellingRate: number;
+  currentStock: number;
+  trackingMode: "NONE" | "BATCH" | "SERIAL";
+  facilityStock?: {
+    facilityId: string;
+    facilityName: string;
+    currentStock: number;
+  }[];
+}
 interface Facility { id: string; name: string; code: string | null; }
 interface InvoiceItem { description: string; productId?: string; quantity: number; rate: number; gstPercent: number; batchNo: string; slNo: string; expiryDate: string; }
+interface ProductAvailability {
+  productId: string;
+  facilityId: string;
+  trackingMode: "NONE" | "BATCH" | "SERIAL";
+  unit: string;
+  currentStock: number;
+  batches: { batchNo: string; availableQty: number; expiryDate: string | null }[];
+  serials: { serialNo: string; batchNo: string | null; expiryDate: string | null }[];
+  serialCount: number;
+  updatedAt: string | null;
+}
 interface Invoice {
   id: string; invoiceNumber: string; date: string; dueDate?: string | null;
   subtotal: number; taxAmount: number; discountPercent?: number; discountAmount?: number; totalAmount: number;
   paidAmount: number; status: string; notes?: string | null;
+  deliveryEnabled?: boolean;
+  deliveryMode?: string | null;
+  deliveryReference?: string | null;
   customer?: { name: string; gstin?: string | null; phone?: string | null; billingAddress?: string | null; city?: string | null } | null;
+  billingAddressSnapshot?: string | null;
+  shippingAddressSnapshot?: string | null;
   items: { description: string; quantity: number; rate: number; amount: number; gstPercent: number; gstAmount: number; }[];
+  additionalCharges?: { name: string; hsnSac?: string | null; amount: number; discountAmount: number; gstPercent: number; gstAmount: number; }[];
 }
 
 const emptyItem: InvoiceItem = { description: "", productId: "", quantity: 1, rate: 0, gstPercent: 0, batchNo: "", slNo: "", expiryDate: "" };
+
+function splitCsv(value: string) {
+  return value
+    .split(/[,\n]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseBatchSelections(value: string) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [batchNo, quantity] = entry.split(":").map((part) => part.trim());
+      return {
+        batchNo,
+        quantity: Number(quantity || "0"),
+      };
+    })
+    .filter((entry) => entry.batchNo && entry.quantity > 0);
+}
+
+function getProductDisplay(product?: Product) {
+  if (!product) return "";
+  return `${product.name}${product.hsn ? ` (${product.hsn})` : ""}`;
+}
 
 export default function SalesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -42,11 +115,27 @@ export default function SalesPage() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const [deliveryMode, setDeliveryMode] = useState("");
+  const [deliveryReference, setDeliveryReference] = useState("");
   const [discountEnabled, setDiscountEnabled] = useState(false);
   const [discountPercent, setDiscountPercent] = useState("0");
   const [discountAmount, setDiscountAmount] = useState("0");
   const [items, setItems] = useState<InvoiceItem[]>([{ ...emptyItem }]);
+  const [additionalCharges, setAdditionalCharges] = useState<AdditionalCharge[]>([]);
+  const [showChargesModal, setShowChargesModal] = useState(false);
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+  const [billingAddr, setBillingAddr] = useState<CustomerAddress | null>(null);
+  const [shippingAddr, setShippingAddr] = useState<CustomerAddress | null>(null);
+  const [shipSameAsBilling, setShipSameAsBilling] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState<null | "billing" | "shipping" | "manage">(null);
+  const [availabilityByKey, setAvailabilityByKey] = useState<Record<string, ProductAvailability>>({});
+  const [serialDraftByRow, setSerialDraftByRow] = useState<Record<number, string>>({});
+  const [batchDraftByRow, setBatchDraftByRow] = useState<
+    Record<number, { batchNo: string; quantity: string }>
+  >({});
+
+  const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;
 
   async function load() {
     const [invRes, custRes, prodRes, facRes] = await Promise.all([
@@ -90,10 +179,129 @@ export default function SalesPage() {
     };
   }, []);
 
+  function handleCustomerChange(nextCustomerId: string) {
+    setCustomerId(nextCustomerId);
+
+    if (!nextCustomerId) {
+      setBillingAddr(null);
+      setShippingAddr(null);
+      setShipSameAsBilling(true);
+      return;
+    }
+
+    const cust = customers.find((c) => c.id === nextCustomerId);
+    const defaultAddr =
+      cust?.addresses?.find((a) => a.isDefault) ?? cust?.addresses?.[0] ?? null;
+    setBillingAddr(defaultAddr);
+    setShippingAddr(null);
+    setShipSameAsBilling(true);
+  }
+
   function updateItem(idx: number, field: keyof InvoiceItem, value: string | number) {
     const updated = [...items];
-    updated[idx] = { ...updated[idx], [field]: value };
+    const currentItem = updated[idx];
+    const nextItem = { ...currentItem, [field]: value };
+
+    if (field === "quantity" && getTrackingMode(currentItem?.productId) === "BATCH") {
+      const allocations = parseBatchSelections(currentItem.batchNo);
+      if (allocations.length === 1) {
+        nextItem.batchNo = `${allocations[0].batchNo}:${formatDecimal(Number(value) || 0)}`;
+      }
+    }
+
+    updated[idx] = nextItem;
     setItems(updated);
+  }
+
+  function setItemPatch(idx: number, patch: Partial<InvoiceItem>) {
+    setItems((current) =>
+      current.map((entry, entryIdx) =>
+        entryIdx === idx ? { ...entry, ...patch } : entry
+      )
+    );
+  }
+
+  function setSerialDraft(idx: number, value: string) {
+    setSerialDraftByRow((current) => ({ ...current, [idx]: value }));
+  }
+
+  function setBatchDraft(idx: number, patch: Partial<{ batchNo: string; quantity: string }>) {
+    setBatchDraftByRow((current) => ({
+      ...current,
+      [idx]: {
+        batchNo: current[idx]?.batchNo ?? "",
+        quantity: current[idx]?.quantity ?? "",
+        ...patch,
+      },
+    }));
+  }
+
+  function addSerialTag(idx: number, serial?: string) {
+    const nextSerial = (serial ?? serialDraftByRow[idx] ?? "").trim();
+    if (!nextSerial) return;
+
+    const item = items[idx];
+    if (!item) return;
+
+    const existing = splitCsv(item.slNo);
+    if (existing.includes(nextSerial)) {
+      setSerialDraft(idx, "");
+      return;
+    }
+
+    const maxCount = Math.max(1, Math.round(item.quantity || 1));
+    if (existing.length >= maxCount) {
+      setSerialDraft(idx, "");
+      return;
+    }
+
+    setItemPatch(idx, { slNo: [...existing, nextSerial].join(", ") });
+    setSerialDraft(idx, "");
+  }
+
+  function removeSerialTag(idx: number, serial: string) {
+    const item = items[idx];
+    if (!item) return;
+
+    const next = splitCsv(item.slNo).filter((entry) => entry !== serial);
+    setItemPatch(idx, { slNo: next.join(", ") });
+  }
+
+  function addBatchTag(idx: number, batchNoArg?: string, quantityArg?: number) {
+    const draft = batchDraftByRow[idx] ?? { batchNo: "", quantity: "" };
+    const batchNo = (batchNoArg ?? draft.batchNo).trim();
+    const quantity = quantityArg ?? Number(draft.quantity);
+    if (!batchNo || quantity <= 0) return;
+
+    const item = items[idx];
+    if (!item) return;
+
+    const existing = parseBatchSelections(item.batchNo);
+    const match = existing.find((entry) => entry.batchNo === batchNo);
+    const next = match
+      ? existing.map((entry) =>
+          entry.batchNo === batchNo
+            ? { ...entry, quantity: entry.quantity + quantity }
+            : entry
+        )
+      : [...existing, { batchNo, quantity }];
+
+    setItemPatch(idx, {
+      batchNo: next.map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`).join(", "),
+    });
+    setBatchDraft(idx, { batchNo: "", quantity: "" });
+  }
+
+  function removeBatchTag(idx: number, batchNo: string) {
+    const item = items[idx];
+    if (!item) return;
+
+    const next = parseBatchSelections(item.batchNo).filter(
+      (entry) => entry.batchNo !== batchNo
+    );
+    setItemPatch(idx, {
+      batchNo: next.map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`).join(", "),
+    });
   }
 
   function selectProduct(idx: number, productId: string) {
@@ -106,19 +314,230 @@ export default function SalesPage() {
         description: product.name + (product.hsn ? ` (HSN: ${product.hsn})` : ""),
         rate: product.sellingRate,
         gstPercent: product.gstPercent,
+        quantity: product.trackingMode === "SERIAL" ? 1 : updated[idx].quantity,
+        batchNo: "",
+        slNo: "",
+        expiryDate: "",
       };
     } else {
-      updated[idx] = { ...updated[idx], productId: "", description: "", rate: 0, gstPercent: 0 };
+      updated[idx] = {
+        ...updated[idx],
+        productId: "",
+        description: "",
+        rate: 0,
+        gstPercent: 0,
+        batchNo: "",
+        slNo: "",
+        expiryDate: "",
+      };
     }
     setItems(updated);
+    setSerialDraft(idx, "");
+    setBatchDraft(idx, { batchNo: "", quantity: "" });
   }
 
+  function getTrackingMode(productId?: string) {
+    return productsList.find((p) => p.id === productId)?.trackingMode ?? "NONE";
+  }
+
+  function getFacilityStock(productId?: string) {
+    if (!productId || !facilityId) return null;
+
+    const cacheKey = `${facilityId}:${productId}`;
+    if (availabilityByKey[cacheKey]) {
+      return availabilityByKey[cacheKey];
+    }
+
+    const product = productsList.find((entry) => entry.id === productId);
+    if (!product) return null;
+
+    return {
+      productId,
+      facilityId,
+      trackingMode: product.trackingMode,
+      unit: product.unit,
+      currentStock:
+        product.facilityStock?.find((row) => row.facilityId === facilityId)?.currentStock ?? 0,
+      batches: [],
+      serials: [],
+      serialCount: 0,
+      updatedAt: null,
+    } satisfies ProductAvailability;
+  }
+
+  function getStockColumnValue(item: InvoiceItem) {
+    const availability = getFacilityStock(item.productId);
+    if (!facilityId || !item.productId || !availability) {
+      return "—";
+    }
+
+    if (availability.trackingMode === "SERIAL") {
+      return `${availability.serialCount} ${availability.unit}`;
+    }
+
+    return `${formatDecimal(availability.currentStock)} ${availability.unit}`;
+  }
+
+  function addSuggestedSerial(idx: number, serialNo: string) {
+    addSerialTag(idx, serialNo);
+  }
+
+  function autoFillSerials(idx: number) {
+    const item = items[idx];
+    const availability = getFacilityStock(item.productId);
+    if (!item || !availability || availability.trackingMode !== "SERIAL") return;
+
+    const selected = splitCsv(item.slNo);
+    const maxCount = Math.max(1, Math.round(item.quantity || 1));
+    const suggestions = availability.serials
+      .map((serial) => serial.serialNo)
+      .filter((serialNo) => !selected.includes(serialNo))
+      .slice(0, Math.max(maxCount - selected.length, 0));
+
+    if (suggestions.length === 0) return;
+
+    const nextSerials = [...selected, ...suggestions];
+    setItemPatch(idx, {
+      slNo: nextSerials.join(", "),
+      quantity: Math.max(item.quantity, nextSerials.length),
+    });
+  }
+
+  function addSuggestedBatch(idx: number, batchNo: string) {
+    const item = items[idx];
+    const availability = getFacilityStock(item.productId);
+    if (!item || !availability || availability.trackingMode !== "BATCH") return;
+
+    const requestedQty = Math.max(item.quantity || 0, 0);
+    const existing = parseBatchSelections(item.batchNo);
+    const allocatedQty = existing.reduce((sum, entry) => sum + entry.quantity, 0);
+    const remainingQty = Math.max(requestedQty - allocatedQty, 0);
+    if (remainingQty <= 0) return;
+
+    const batch = availability.batches.find((entry) => entry.batchNo === batchNo);
+    if (!batch) return;
+
+    const existingEntry = existing.find((entry) => entry.batchNo === batchNo);
+    const alreadyAllocatedForBatch = existingEntry?.quantity ?? 0;
+    const freeInBatch = Math.max(batch.availableQty - alreadyAllocatedForBatch, 0);
+    const takeQty = Math.min(remainingQty, freeInBatch);
+    if (takeQty <= 0) return;
+
+    addBatchTag(idx, batchNo, takeQty);
+    setItemPatch(idx, {
+      expiryDate: batch.expiryDate ? batch.expiryDate.slice(0, 10) : item.expiryDate,
+    });
+  }
+
+  function autoFillBatches(idx: number) {
+    const item = items[idx];
+    const availability = getFacilityStock(item.productId);
+    if (!item || !availability || availability.trackingMode !== "BATCH") return;
+
+    let selections = parseBatchSelections(item.batchNo);
+    let allocatedQty = selections.reduce((sum, entry) => sum + entry.quantity, 0);
+    let remainingQty = Math.max(item.quantity - allocatedQty, 0);
+    if (remainingQty <= 0) return;
+
+    for (const batch of availability.batches) {
+      if (remainingQty <= 0) break;
+
+      const existingEntry = selections.find((entry) => entry.batchNo === batch.batchNo);
+      const allocatedForBatch = existingEntry?.quantity ?? 0;
+      const freeInBatch = Math.max(batch.availableQty - allocatedForBatch, 0);
+      const takeQty = Math.min(remainingQty, freeInBatch);
+      if (takeQty <= 0) continue;
+
+      if (existingEntry) {
+        existingEntry.quantity += takeQty;
+      } else {
+        selections = [...selections, { batchNo: batch.batchNo, quantity: takeQty }];
+      }
+
+      allocatedQty += takeQty;
+      remainingQty = Math.max(item.quantity - allocatedQty, 0);
+    }
+
+    setItemPatch(idx, {
+      batchNo: selections
+        .map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`)
+        .join(", "),
+    });
+  }
+
+  useEffect(() => {
+    if (!facilityId) {
+      return;
+    }
+
+    const productIds = Array.from(
+      new Set(items.map((item) => item.productId).filter((id): id is string => Boolean(id)))
+    );
+
+    if (productIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadAvailability() {
+      const pendingIds = productIds.filter(
+        (productId) => !availabilityByKey[`${facilityId}:${productId}`]
+      );
+
+      if (pendingIds.length === 0) {
+        return;
+      }
+
+      const results = await Promise.all(
+        pendingIds.map(async (productId) => {
+          const res = await fetch(
+            `/api/products/${productId}/availability?facilityId=${encodeURIComponent(facilityId)}`
+          );
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || "Failed to load stock availability");
+          }
+
+          return {
+            cacheKey: `${facilityId}:${productId}`,
+            data: data as ProductAvailability,
+          };
+        })
+      );
+
+      if (cancelled || results.length === 0) {
+        return;
+      }
+
+      setAvailabilityByKey((current) => {
+        const next = { ...current };
+        for (const result of results) {
+          next[result.cacheKey] = result.data;
+        }
+        return next;
+      });
+    }
+
+    void loadAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [facilityId, items, availabilityByKey]);
+
   function calcTotal() {
-    return items.reduce((sum, item) => {
+    const itemsTotal = items.reduce((sum, item) => {
       const amount = item.quantity * item.rate;
       const gst = (amount * item.gstPercent) / 100;
       return sum + amount + gst;
     }, 0);
+    const chargesTotal = additionalCharges.reduce((sum, c) => {
+      const taxable = Math.max(c.amount - (c.discountAmount ?? 0), 0);
+      return sum + taxable + (taxable * c.gstPercent) / 100;
+    }, 0);
+    return itemsTotal + chargesTotal;
   }
 
   function formatDecimal(value: number) {
@@ -165,6 +584,11 @@ export default function SalesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    const billingSnap = formatAddressSnapshot(billingAddr);
+    const shippingSnap = shipSameAsBilling
+      ? billingSnap
+      : formatAddressSnapshot(shippingAddr);
+
     const res = await fetch("/api/invoices", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -175,27 +599,56 @@ export default function SalesPage() {
         customerId,
         facilityId,
         items,
+        additionalCharges,
         notes,
+        deliveryEnabled,
+        deliveryMode,
+        deliveryReference,
         discountEnabled,
         discountPercent: normalizedDiscountPercent,
         discountAmount: normalizedDiscountAmount,
+        billingAddressSnapshot: billingSnap || undefined,
+        shippingAddressSnapshot: shippingSnap || undefined,
       }),
     });
     setLoading(false);
     if (res.ok) {
       setShowForm(false);
       setItems([{ ...emptyItem }]);
+      setAdditionalCharges([]);
       setCustomerId("");
       setFacilityId("");
+      setAvailabilityByKey({});
+      setSerialDraftByRow({});
+      setBatchDraftByRow({});
       setNotes("");
+      setDeliveryEnabled(false);
+      setDeliveryMode("");
+      setDeliveryReference("");
       setDiscountEnabled(false);
       setDiscountPercent("0");
       setDiscountAmount("0");
+      setBillingAddr(null);
+      setShippingAddr(null);
+      setShipSameAsBilling(true);
       load();
     }
   }
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
+  const chargeLineTotal = (charge: {
+    amount: number;
+    discountAmount?: number;
+    gstPercent: number;
+    gstAmount?: number;
+  }) => {
+    const taxable = Math.max(charge.amount - (charge.discountAmount ?? 0), 0);
+    const gstAmount =
+      typeof charge.gstAmount === "number"
+        ? charge.gstAmount
+        : (taxable * charge.gstPercent) / 100;
+    return taxable + gstAmount;
+  };
 
   return (
     <div>
@@ -215,14 +668,33 @@ export default function SalesPage() {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <Label>Customer *</Label>
-                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={customerId} onChange={(e) => handleCustomerChange(e.target.value)} required>
                     <option value="">Select customer</option>
                     {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
                   <Label>Facility *</Label>
-                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={facilityId} onChange={(e) => setFacilityId(e.target.value)} required>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    value={facilityId}
+                    onChange={(e) => {
+                      const nextFacilityId = e.target.value;
+                      setFacilityId(nextFacilityId);
+                      setAvailabilityByKey({});
+                      setSerialDraftByRow({});
+                      setBatchDraftByRow({});
+                      setItems((current) =>
+                        current.map((item) => ({
+                          ...item,
+                          batchNo: "",
+                          slNo: "",
+                          expiryDate: nextFacilityId ? item.expiryDate : "",
+                        }))
+                      );
+                    }}
+                    required
+                  >
                     <option value="">Select facility</option>
                     {facilitiesList.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                   </select>
@@ -230,6 +702,129 @@ export default function SalesPage() {
                 <div><Label>Date *</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
                 <div><Label>Due Date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
                 <div><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
+                    Billing Address
+                  </Label>
+                  {customerId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPickerOpen("billing")}
+                    >
+                      {billingAddr ? "Change" : "Select address"}
+                    </Button>
+                  )}
+                </div>
+                <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm min-h-[2.5rem]">
+                  {!customerId ? (
+                    <span className="text-[var(--muted-foreground)]">Select a customer first</span>
+                  ) : billingAddr ? (
+                    <span>{formatAddressSnapshot(billingAddr)}</span>
+                  ) : (
+                    <span className="text-[var(--muted-foreground)]">No address selected</span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <input
+                    id="ship-same-as-billing"
+                    type="checkbox"
+                    checked={shipSameAsBilling}
+                    onChange={(e) => setShipSameAsBilling(e.target.checked)}
+                    className="h-4 w-4 rounded border border-input"
+                  />
+                  <Label htmlFor="ship-same-as-billing" className="cursor-pointer">
+                    Shipping same as billing
+                  </Label>
+                </div>
+
+                {!shipSameAsBilling && (
+                  <>
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                      <Label className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
+                        Shipping Address
+                      </Label>
+                      {customerId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPickerOpen("shipping")}
+                        >
+                          {shippingAddr ? "Change" : "Select address"}
+                        </Button>
+                      )}
+                    </div>
+                    <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm min-h-[2.5rem]">
+                      {!customerId ? (
+                        <span className="text-[var(--muted-foreground)]">Select a customer first</span>
+                      ) : shippingAddr ? (
+                        <span>{formatAddressSnapshot(shippingAddr)}</span>
+                      ) : (
+                        <span className="text-[var(--muted-foreground)]">No address selected</span>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <input
+                    id="sales-delivery-enabled"
+                    type="checkbox"
+                    checked={deliveryEnabled}
+                    onChange={(e) => {
+                      setDeliveryEnabled(e.target.checked);
+                      if (!e.target.checked) {
+                        setDeliveryMode("");
+                        setDeliveryReference("");
+                      }
+                    }}
+                    className="h-4 w-4 rounded border border-input"
+                  />
+                  <Label htmlFor="sales-delivery-enabled" className="cursor-pointer">
+                    Add delivery details
+                  </Label>
+                </div>
+
+                {deliveryEnabled && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <Label>Delivery Mode *</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                        value={deliveryMode}
+                        onChange={(e) => setDeliveryMode(e.target.value)}
+                        required={deliveryEnabled}
+                      >
+                        <option value="">Select mode</option>
+                        <option value="Courier">Courier</option>
+                        <option value="Transport">Transport</option>
+                        <option value="Hand Delivery">Hand Delivery</option>
+                        <option value="Post">Post</option>
+                        <option value="Bus">Bus</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label>AWB / Reference No. *</Label>
+                      <Input
+                        value={deliveryReference}
+                        onChange={(e) => setDeliveryReference(e.target.value)}
+                        placeholder="AWB number or delivery reference"
+                        required={deliveryEnabled}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
@@ -280,42 +875,219 @@ export default function SalesPage() {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Items</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, { ...emptyItem }])}>
-                    <Plus className="h-3 w-3 mr-1" /> Add Item
-                  </Button>
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="flex items-center gap-2">
+                    <Label>Items</Label>
+                    {additionalCharges.length > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-rubick-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rubick-primary">
+                        {additionalCharges.length} extra charge
+                        {additionalCharges.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowChargesModal(true)}
+                    >
+                      <Receipt className="h-3 w-3 mr-1" />
+                      {additionalCharges.length > 0
+                        ? "Edit Charges"
+                        : "Add Additional Charges"}
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, { ...emptyItem }])} disabled={!facilityId}>
+                      <Plus className="h-3 w-3 mr-1" /> Add Item
+                    </Button>
+                  </div>
                 </div>
+                {!facilityId && (
+                  <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Select a facility before adding or choosing line items.
+                  </div>
+                )}
                 <div className="space-y-2 overflow-x-auto">
                   {items.map((item, idx) => (
-                    <div key={idx} className="flex gap-2 items-end min-w-[900px]">
-                      <div className="w-[200px] shrink-0">
-                        {idx === 0 && <Label className="text-xs">Product</Label>}
-                        <select
-                          className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    <div
+                      key={idx}
+                      className="grid min-w-[1460px] grid-cols-[minmax(240px,1.55fr)_120px_minmax(240px,1.35fr)_minmax(240px,1.35fr)_120px_80px_90px_70px_100px_40px] items-start gap-2"
+                    >
+                      {(() => {
+                        const trackingMode = getTrackingMode(item.productId);
+                        const isBatch = trackingMode === "BATCH";
+                        const isSerial = trackingMode === "SERIAL";
+                        return (
+                          <>
+                      <div className="min-w-0">
+{idx === 0 && <Label className="text-xs">Product</Label>}
+                        <SearchSelect
                           value={item.productId || ""}
-                          onChange={(e) => selectProduct(idx, e.target.value)}
-                          required
-                        >
-                          <option value="">Select product</option>
-                          {productsList.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}{p.hsn ? ` (${p.hsn})` : ""} — Stock: {p.currentStock} {p.unit}
-                            </option>
-                          ))}
-                        </select>
+                          displayValue={getProductDisplay(
+                            productsList.find((p) => p.id === item.productId)
+                          )}
+                          endpoint="/api/products"
+                          placeholder={facilityId ? "Search product" : "Select facility first"}
+                          disabled={!facilityId}
+                          mapResult={(row) => {
+                            const product = row as unknown as Product;
+                            return {
+                              id: product.id,
+                              label: getProductDisplay(product),
+                              hint: `${product.currentStock} ${product.unit}`,
+                            };
+                          }}
+                          onChange={(opt) => selectProduct(idx, opt?.id ?? "")}
+                        />
                       </div>
-                      <div className="w-[100px] shrink-0">{idx === 0 && <Label className="text-xs">Batch No</Label>}<Input value={item.batchNo} onChange={(e) => updateItem(idx, "batchNo", e.target.value)} placeholder="Batch" /></div>
-                      <div className="w-[90px] shrink-0">{idx === 0 && <Label className="text-xs">SL No</Label>}<Input value={item.slNo} onChange={(e) => updateItem(idx, "slNo", e.target.value)} placeholder="Serial" /></div>
-                      <div className="w-[120px] shrink-0">{idx === 0 && <Label className="text-xs">Expiry</Label>}<Input type="date" value={item.expiryDate} onChange={(e) => updateItem(idx, "expiryDate", e.target.value)} /></div>
-                      <div className="w-[80px] shrink-0">{idx === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))} min={0.01} step={0.01} /></div>
-                      <div className="w-[90px] shrink-0">{idx === 0 && <Label className="text-xs">Rate</Label>}<Input type="number" value={item.rate} onChange={(e) => updateItem(idx, "rate", Number(e.target.value))} min={0} /></div>
-                      <div className="w-[70px] shrink-0">{idx === 0 && <Label className="text-xs">GST %</Label>}<Input type="number" value={item.gstPercent} onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))} min={0} max={28} /></div>
-                      <div className="w-[80px] shrink-0 text-right text-sm font-medium pt-1">{fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}</div>
-                      <div className="w-[40px] shrink-0">{items.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
+                      <div className="min-w-0">
+                        {idx === 0 && <Label className="text-xs">Current Stock</Label>}
+                        <div className="flex h-9 items-center rounded-md border border-input bg-[var(--muted)] px-3 text-sm font-medium">
+                          {getStockColumnValue(item)}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        {idx === 0 && <Label className="text-xs">Batch No{isBatch ? " *" : ""}</Label>}
+                        {isBatch ? (
+                          <>
+                            <div className="flex gap-2">
+                              <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                                value=""
+                                onChange={(e) => {
+                                  const nextBatchNo = e.target.value;
+                                  if (!nextBatchNo) return;
+                                  addSuggestedBatch(idx, nextBatchNo);
+                                }}
+                                disabled={!facilityId}
+                              >
+                                <option value="">Select available batch</option>
+                                {(getFacilityStock(item.productId)?.batches ?? [])
+                                  .filter((batch) => batch.availableQty > 0)
+                                  .map((batch) => (
+                                    <option key={batch.batchNo} value={batch.batchNo}>
+                                      {batch.batchNo} ({formatDecimal(batch.availableQty)})
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {parseBatchSelections(item.batchNo).map((entry) => (
+                                <button
+                                  key={entry.batchNo}
+                                  type="button"
+                                  className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-[10px] font-medium"
+                                  onClick={() => removeBatchTag(idx, entry.batchNo)}
+                                >
+                                  {entry.batchNo}:{formatDecimal(entry.quantity)} ×
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <Input
+                            value={item.batchNo}
+                            onChange={(e) => updateItem(idx, "batchNo", e.target.value)}
+                            placeholder={isSerial ? "Optional shared batch" : "N/A"}
+                            disabled={!facilityId || trackingMode === "NONE"}
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        {idx === 0 && <Label className="text-xs">SL No{isSerial ? " *" : ""}</Label>}
+                        {isSerial ? (
+                          <>
+                            <div className="flex gap-2">
+                              <select
+                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                                value=""
+                                onChange={(e) => {
+                                  const nextSerial = e.target.value;
+                                  if (!nextSerial) return;
+                                  addSuggestedSerial(idx, nextSerial);
+                                }}
+                                disabled={!facilityId}
+                              >
+                                <option value="">Select available serial</option>
+                                {(getFacilityStock(item.productId)?.serials ?? [])
+                                  .filter((serial) => !splitCsv(item.slNo).includes(serial.serialNo))
+                                  .map((serial) => (
+                                    <option key={serial.serialNo} value={serial.serialNo}>
+                                      {serial.batchNo
+                                        ? `${serial.serialNo} [${serial.batchNo}]`
+                                        : serial.serialNo}
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {splitCsv(item.slNo).map((serial) => (
+                                <button
+                                  key={serial}
+                                  type="button"
+                                  className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-[10px] font-medium"
+                                  onClick={() => removeSerialTag(idx, serial)}
+                                >
+                                  {serial} ×
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        ) : (
+                          <Input
+                            value={item.slNo}
+                            onChange={(e) => updateItem(idx, "slNo", e.target.value)}
+                            placeholder="N/A"
+                            disabled
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Expiry</Label>}<Input type="date" value={item.expiryDate} onChange={(e) => updateItem(idx, "expiryDate", e.target.value)} /></div>
+                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", isSerial ? Math.max(1, Math.round(Number(e.target.value) || 1)) : Number(e.target.value))} min={isSerial ? 1 : 0.01} step={isSerial ? 1 : 0.01} /></div>
+                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Rate</Label>}<Input type="number" value={item.rate} onChange={(e) => updateItem(idx, "rate", Number(e.target.value))} min={0} /></div>
+                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">GST %</Label>}<Input type="number" value={item.gstPercent} onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))} min={0} max={28} /></div>
+                      <div className="min-w-0 pt-1 text-right text-sm font-medium">{fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}</div>
+                      <div className="min-w-0">{items.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>
+                {additionalCharges.length > 0 && (
+                  <div className="mt-4 rounded-lg border border-dashed border-[var(--border)] bg-[var(--muted)]/40 p-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                      Selected Additional Charges
+                    </p>
+                    <div className="space-y-2">
+                      {additionalCharges.map((charge, idx) => (
+                        <div
+                          key={`${charge.name}-${idx}`}
+                          className="flex items-center justify-between gap-3 rounded-md bg-[var(--card)] px-3 py-2 text-sm"
+                        >
+                          <div>
+                            <div className="font-medium">{charge.name}</div>
+                            <div className="text-xs text-[var(--muted-foreground)]">
+                              {charge.hsnSac ? `HSN/SAC ${charge.hsnSac} · ` : ""}
+                              GST {formatDecimal(charge.gstPercent)}%
+                              {(charge.discountAmount ?? 0) > 0
+                                ? ` · Disc ${fmt(charge.discountAmount ?? 0)}`
+                                : ""}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium">
+                              {fmt(chargeLineTotal(charge))}
+                            </div>
+                            <div className="text-xs text-[var(--muted-foreground)]">
+                              Base {fmt(charge.amount)}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between items-center pt-4 border-t">
@@ -442,12 +1214,39 @@ export default function SalesPage() {
             </div>
 
             {viewInvoice.customer && (
-              <div className="px-6 pt-4">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Customer</p>
-                <p className="font-semibold">{viewInvoice.customer.name}</p>
-                {viewInvoice.customer.gstin && <p className="text-xs text-[var(--muted-foreground)]">GSTIN: {viewInvoice.customer.gstin}</p>}
-                {viewInvoice.customer.phone && <p className="text-xs text-[var(--muted-foreground)]">Phone: {viewInvoice.customer.phone}</p>}
-                {viewInvoice.customer.billingAddress && <p className="text-xs text-[var(--muted-foreground)]">{viewInvoice.customer.billingAddress}{viewInvoice.customer.city ? `, ${viewInvoice.customer.city}` : ""}</p>}
+              <div className="px-6 pt-4 space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">Customer</p>
+                  <p className="font-semibold">{viewInvoice.customer.name}</p>
+                  {viewInvoice.customer.gstin && <p className="text-xs text-[var(--muted-foreground)]">GSTIN: {viewInvoice.customer.gstin}</p>}
+                  {viewInvoice.customer.phone && <p className="text-xs text-[var(--muted-foreground)]">Phone: {viewInvoice.customer.phone}</p>}
+                </div>
+                {viewInvoice.billingAddressSnapshot && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Bill To</p>
+                    <p className="text-sm">{viewInvoice.billingAddressSnapshot}</p>
+                  </div>
+                )}
+                {viewInvoice.shippingAddressSnapshot &&
+                  viewInvoice.shippingAddressSnapshot !== viewInvoice.billingAddressSnapshot && (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Ship To</p>
+                      <p className="text-sm">{viewInvoice.shippingAddressSnapshot}</p>
+                    </div>
+                  )}
+                {viewInvoice.deliveryEnabled && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                      Delivery
+                    </p>
+                    <p className="text-sm">
+                      {viewInvoice.deliveryMode || "-"}
+                      {viewInvoice.deliveryReference
+                        ? ` · ${viewInvoice.deliveryReference}`
+                        : ""}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -478,6 +1277,46 @@ export default function SalesPage() {
                   ))}
                 </tbody>
               </table>
+
+              {viewInvoice.additionalCharges && viewInvoice.additionalCharges.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                    Other Charges
+                  </p>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-[var(--border)] text-[var(--muted-foreground)]">
+                        <th className="text-left py-2 font-medium">#</th>
+                        <th className="text-left py-2 font-medium">Particulars</th>
+                        <th className="text-left py-2 font-medium">HSN/SAC</th>
+                        <th className="text-right py-2 font-medium">Amount</th>
+                        <th className="text-right py-2 font-medium">Disc</th>
+                        <th className="text-right py-2 font-medium">GST %</th>
+                        <th className="text-right py-2 font-medium">GST Amt</th>
+                        <th className="text-right py-2 font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewInvoice.additionalCharges.map((c, i) => {
+                        const disc = c.discountAmount ?? 0;
+                        const taxable = Math.max(c.amount - disc, 0);
+                        return (
+                          <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                            <td className="py-2 text-[var(--muted-foreground)]">{i + 1}</td>
+                            <td className="py-2">{c.name}</td>
+                            <td className="py-2">{c.hsnSac || "—"}</td>
+                            <td className="py-2 text-right">{fmt(c.amount)}</td>
+                            <td className="py-2 text-right">{disc > 0 ? `-${fmt(disc)}` : "—"}</td>
+                            <td className="py-2 text-right">{c.gstPercent}%</td>
+                            <td className="py-2 text-right">{fmt(c.gstAmount)}</td>
+                            <td className="py-2 text-right font-medium">{fmt(taxable + c.gstAmount)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="px-6 pb-6 space-y-1 border-t border-[var(--border)] pt-4">
@@ -500,6 +1339,35 @@ export default function SalesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {pickerOpen && customerId && selectedCustomer && (
+        <AddressPickerModal
+          customerId={customerId}
+          customerName={selectedCustomer.name}
+          selectedAddressId={
+            pickerOpen === "billing"
+              ? billingAddr?.id ?? null
+              : shippingAddr?.id ?? null
+          }
+          onSelect={(addr) => {
+            if (pickerOpen === "billing") setBillingAddr(addr);
+            else if (pickerOpen === "shipping") setShippingAddr(addr);
+          }}
+          onClose={() => {
+            setPickerOpen(null);
+            // Refresh customers so newly created/edited addresses propagate.
+            load();
+          }}
+        />
+      )}
+
+      {showChargesModal && (
+        <AdditionalChargesModal
+          initial={additionalCharges}
+          onSave={(charges) => setAdditionalCharges(charges)}
+          onClose={() => setShowChargesModal(false)}
+        />
       )}
     </div>
   );

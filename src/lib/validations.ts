@@ -62,13 +62,18 @@ export const customerSchema = z.object({
   pan: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
-  billingAddress: z.string().optional(),
-  shippingAddress: z.string().optional(),
+  creditLimit: z.coerce.number().min(0).default(0),
+  openingBalance: z.coerce.number().default(0),
+});
+
+// Customer address
+export const customerAddressSchema = z.object({
+  label: z.string().optional(),
+  line1: z.string().min(1, "Address required"),
   city: z.string().optional(),
   state: z.string().optional(),
   pincode: z.string().optional(),
-  creditLimit: z.coerce.number().min(0).default(0),
-  openingBalance: z.coerce.number().default(0),
+  isDefault: z.boolean().optional().default(false),
 });
 
 // Vendor
@@ -106,6 +111,33 @@ export const invoiceItemSchema = z.object({
   batchNo: z.string().optional(),
   slNo: z.string().optional(),
   expiryDate: z.string().optional(),
+  serialNumbers: z.array(z.string().min(1)).optional(),
+  batchAllocations: z
+    .array(
+      z.object({
+        batchNo: z.string().min(1),
+        quantity: z.coerce.number().min(0.01),
+        expiryDate: z.string().optional().nullable(),
+      })
+    )
+    .optional(),
+});
+
+// Additional charge (freight, packing, loading, etc.)
+export const additionalChargeSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  hsnSac: z.string().optional(),
+  amount: z.coerce.number().min(0),
+  discountAmount: z.coerce.number().min(0).optional().default(0),
+  gstPercent: z.coerce.number().min(0).max(28).default(0),
+});
+
+export const additionalChargeCatalogSchema = z.object({
+  name: z.string().min(1, "Name required"),
+  hsnSac: z.string().optional(),
+  defaultAmount: z.coerce.number().min(0).default(0),
+  defaultDiscountAmount: z.coerce.number().min(0).default(0),
+  gstPercent: z.coerce.number().min(0).max(28).default(0),
 });
 
 // Invoice
@@ -115,12 +147,36 @@ export const invoiceSchema = z.object({
   customerId: z.string().optional(),
   vendorId: z.string().optional(),
   facilityId: z.string().optional(),
+  deliveryEnabled: z.boolean().optional().default(false),
+  deliveryMode: z.string().optional(),
+  deliveryReference: z.string().optional(),
   discountEnabled: z.boolean().optional().default(false),
   discountPercent: z.coerce.number().min(0).max(100).optional().default(0),
   discountAmount: z.coerce.number().min(0).optional().default(0),
   items: z.array(invoiceItemSchema).min(1, "At least one item required"),
+  additionalCharges: z.array(additionalChargeSchema).optional().default([]),
   notes: z.string().optional(),
+  billingAddressSnapshot: z.string().optional(),
+  shippingAddressSnapshot: z.string().optional(),
 }).superRefine((data, ctx) => {
+  if (data.deliveryEnabled) {
+    if (!data.deliveryMode?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Delivery mode is required",
+        path: ["deliveryMode"],
+      });
+    }
+
+    if (!data.deliveryReference?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "AWB or reference number is required",
+        path: ["deliveryReference"],
+      });
+    }
+  }
+
   if (!data.discountEnabled) {
     return;
   }
@@ -154,12 +210,21 @@ export const productSchema = z.object({
   unit: z.enum(["PCS", "KG", "LTR", "BOX", "MTR", "SET", "PAIR", "DOZEN", "STRIP", "BOTTLE", "TUBE", "VIAL"]).default("PCS"),
   categoryId: z.string().optional().or(z.literal("")),
   subcategoryId: z.string().optional().or(z.literal("")),
+  trackingMode: z.enum(["NONE", "BATCH", "SERIAL"]).default("NONE"),
   gstPercent: z.coerce.number().min(0).max(28).default(0),
   purchaseRate: z.coerce.number().min(0).default(0),
   sellingRate: z.coerce.number().min(0).default(0),
   openingStock: z.coerce.number().min(0).default(0),
   reorderLevel: z.coerce.number().min(0).default(0),
   imageUrl: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.trackingMode !== "NONE" && data.openingStock !== 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Tracked products must start with zero opening stock",
+      path: ["openingStock"],
+    });
+  }
 });
 
 // Stock Movement

@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, MapPin } from "lucide-react";
+import { AddressPickerModal } from "@/components/customers/address-picker-modal";
 
 interface Customer {
   id: string;
@@ -22,10 +23,10 @@ interface Customer {
   gstin: string | null;
   phone: string | null;
   email: string | null;
-  city: string | null;
   creditLimit: number;
   openingBalance: number;
   ledgerAccount?: { balance: number } | null;
+  addresses?: { id: string; isDefault: boolean }[];
 }
 
 export default function CustomersPage() {
@@ -36,9 +37,9 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "", gstin: "", phone: "", email: "",
-    billingAddress: "", shippingAddress: "", city: "", state: "", pincode: "",
     creditLimit: 0, openingBalance: 0,
   });
+  const [manageAddrsFor, setManageAddrsFor] = useState<{ id: string; name: string } | null>(null);
 
   async function loadCustomers() {
     const res = await fetch("/api/customers");
@@ -65,7 +66,7 @@ export default function CustomersPage() {
   }, []);
 
   function resetForm() {
-    setFormData({ name: "", gstin: "", phone: "", email: "", billingAddress: "", shippingAddress: "", city: "", state: "", pincode: "", creditLimit: 0, openingBalance: 0 });
+    setFormData({ name: "", gstin: "", phone: "", email: "", creditLimit: 0, openingBalance: 0 });
     setEditingId(null);
     setShowForm(false);
   }
@@ -99,7 +100,6 @@ export default function CustomersPage() {
   function handleEdit(c: Customer) {
     setFormData({
       name: c.name, gstin: c.gstin || "", phone: c.phone || "", email: c.email || "",
-      billingAddress: "", shippingAddress: "", city: c.city || "", state: "", pincode: "",
       creditLimit: c.creditLimit, openingBalance: c.openingBalance,
     });
     setEditingId(c.id);
@@ -146,14 +146,6 @@ export default function CustomersPage() {
                 <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
               </div>
               <div>
-                <Label>City</Label>
-                <Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
-              </div>
-              <div>
-                <Label>State</Label>
-                <Input value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} />
-              </div>
-              <div>
                 <Label>Credit Limit</Label>
                 <Input type="number" value={formData.creditLimit} onChange={(e) => setFormData({ ...formData, creditLimit: Number(e.target.value) })} />
               </div>
@@ -194,8 +186,8 @@ export default function CustomersPage() {
                 <TableHeader className="bg-rubick-primary text-white w-[8rem]">
                   GSTIN
                 </TableHeader>
-                <TableHeader className="bg-rubick-primary text-white w-[8rem]">
-                  City
+                <TableHeader className="bg-rubick-primary text-white w-[10rem]">
+                  Addresses
                 </TableHeader>
                 <TableHeader className="bg-rubick-primary !text-right text-white w-[8rem]">
                   Balance
@@ -221,7 +213,15 @@ export default function CustomersPage() {
                     {c.gstin || "-"}
                   </TableCell>
                   <TableCell className="align-middle text-slate-500">
-                    {c.city || "-"}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManageAddrsFor({ id: c.id, name: c.name })}
+                    >
+                      <MapPin className="h-3.5 w-3.5 mr-1" />
+                      {c.addresses?.length ?? 0} address
+                      {(c.addresses?.length ?? 0) === 1 ? "" : "es"}
+                    </Button>
                   </TableCell>
                   <TableCell className="whitespace-nowrap align-middle  !text-right font-medium">
                     {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString(
@@ -263,6 +263,17 @@ export default function CustomersPage() {
           </Table>
         </CardContent>
       </Card>
+
+      {manageAddrsFor && (
+        <AddressPickerModal
+          customerId={manageAddrsFor.id}
+          customerName={manageAddrsFor.name}
+          onClose={() => {
+            setManageAddrsFor(null);
+            loadCustomers();
+          }}
+        />
+      )}
     </div>
   );
 }

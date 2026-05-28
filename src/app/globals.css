@@ -427,3 +427,21 @@ body {
     @apply py-4;
   }
 }
+
+#style-4::-webkit-scrollbar-track
+{
+	-webkit-box-shadow: inset 0 0 2px rgb(var(--rubick-primary));
+	background-color: #F5F5F5;
+}
+
+#style-4::-webkit-scrollbar
+{
+	width: 5px;
+	background-color: #F5F5F5;
+}
+
+#style-4::-webkit-scrollbar-thumb
+{
+	background-color: rgb(var(--rubick-primary));
+	border: 1px solid #555555;
+}

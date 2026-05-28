@@ -249,7 +249,7 @@ function SidebarNavigation({
       <div className={cn("mx-5 my-5 h-px bg-white/10", mobile && "mx-4")} />
 
       <nav className="flex min-h-0 flex-1 flex-col">
-        <div className={cn("min-h-0 flex-1 overflow-y-auto pr-5", mobile && "pr-0")}>
+        <div id="style-4" className={cn("min-h-0 flex-1 overflow-y-auto pr-5", mobile && "pr-0")}>
           {renderGroups(topNavGroups)}
         </div>
 

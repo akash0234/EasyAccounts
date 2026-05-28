@@ -8,6 +8,7 @@ import {
   renderInvoiceHtml,
   type InvoiceTemplateData,
   type TemplateItem,
+  type TemplateAdditionalCharge,
   type TemplateParty,
 } from "@/lib/pdf/invoice-template";
 import { htmlToPdfBuffer } from "@/lib/pdf/render";
@@ -39,6 +40,7 @@ export async function GET(
       customer: true,
       facility: true,
       items: true,
+      additionalCharges: true,
     },
   });
 
@@ -69,23 +71,19 @@ export async function GET(
     );
   }
 
+  const isVendor = "address" in partySource;
   const party: TemplateParty = {
     name: partySource.name,
     gstin: partySource.gstin,
     pan: partySource.pan,
     phone: partySource.phone,
     email: partySource.email,
-    address:
-      "address" in partySource
-        ? partySource.address
-        : partySource.billingAddress,
-    billingAddress:
-      "billingAddress" in partySource ? partySource.billingAddress : null,
-    shippingAddress:
-      "shippingAddress" in partySource ? partySource.shippingAddress : null,
-    city: partySource.city,
-    state: partySource.state,
-    pincode: partySource.pincode,
+    address: isVendor ? partySource.address : null,
+    billingAddress: null,
+    shippingAddress: null,
+    city: isVendor ? partySource.city : null,
+    state: isVendor ? partySource.state : null,
+    pincode: isVendor ? partySource.pincode : null,
   };
 
   const items: TemplateItem[] = invoice.items.map((it) => ({
@@ -98,6 +96,17 @@ export async function GET(
     batchNo: it.batchNo,
     slNo: it.slNo,
     expiryDate: it.expiryDate,
+  }));
+
+  const additionalCharges: TemplateAdditionalCharge[] = (
+    invoice.additionalCharges ?? []
+  ).map((c) => ({
+    name: c.name,
+    hsnSac: c.hsnSac,
+    amount: c.amount,
+    discountAmount: c.discountAmount,
+    gstPercent: c.gstPercent,
+    gstAmount: c.gstAmount,
   }));
 
   const data: InvoiceTemplateData = {
@@ -133,7 +142,10 @@ export async function GET(
       status: invoice.status,
       notes: invoice.notes,
       items,
+      additionalCharges,
       financialYear: fy?.label ?? null,
+      billingAddressSnapshot: invoice.billingAddressSnapshot,
+      shippingAddressSnapshot: invoice.shippingAddressSnapshot,
     },
   };
 

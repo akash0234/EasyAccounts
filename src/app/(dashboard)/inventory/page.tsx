@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Search, Trash2, Edit2, X, Upload } from "lucide-react";
 import { FacilityStockModal, type InventoryStockProduct } from "@/components/inventory/facility-stock-modal";
+import { SearchSelect } from "@/components/ui/search-select";
 
 interface FacilityStockItem {
   facilityId: string;
@@ -33,6 +34,7 @@ interface Product {
   unit: string;
   categoryId: string | null;
   subcategoryId: string | null;
+  trackingMode: "NONE" | "BATCH" | "SERIAL";
   category?: { id: string; name: string } | null;
   subcategory?: { id: string; name: string; categoryId: string } | null;
   gstPercent: number;
@@ -46,30 +48,17 @@ interface Product {
   facilityStock?: FacilityStockItem[];
 }
 
-interface CategoryOption {
-  id: string;
-  name: string;
-  subcategories: { id: string; name: string; categoryId: string }[];
-}
-
-interface SubcategoryOption {
-  id: string;
-  name: string;
-  categoryId: string;
-  categoryName: string;
-}
-
 const UNITS = ["PCS", "KG", "LTR", "BOX", "MTR", "SET", "PAIR", "DOZEN", "STRIP", "BOTTLE", "TUBE", "VIAL"];
 
 const defaultForm = {
   name: "", description: "", hsn: "", sku: "", unit: "PCS",
+  trackingMode: "NONE" as "NONE" | "BATCH" | "SERIAL",
   categoryId: "", subcategoryId: "", gstPercent: 0, purchaseRate: 0, sellingRate: 0,
   openingStock: 0, reorderLevel: 0, imageUrl: "",
 };
 
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -78,8 +67,8 @@ export default function InventoryPage() {
   const [selectedProduct, setSelectedProduct] = useState<InventoryStockProduct | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({ ...defaultForm });
-  const [subcategorySearch, setSubcategorySearch] = useState("");
-  const [subcategoryOpen, setSubcategoryOpen] = useState(false);
+  const [subcategoryDisplay, setSubcategoryDisplay] = useState("");
+  const [selectedCategoryName, setSelectedCategoryName] = useState("");
 
   async function loadProducts() {
     const res = await fetch("/api/products");
@@ -90,16 +79,9 @@ export default function InventoryPage() {
   useEffect(() => {
     let cancelled = false;
     async function init() {
-      const [productsRes, categoriesRes] = await Promise.all([
-        fetch("/api/products"),
-        fetch("/api/products/categories"),
-      ]);
-      const [productsData, categoriesData] = await Promise.all([
-        productsRes.json(),
-        categoriesRes.json(),
-      ]);
-      if (!cancelled && Array.isArray(productsData)) setProducts(productsData);
-      if (!cancelled && Array.isArray(categoriesData)) setCategories(categoriesData);
+      const res = await fetch("/api/products");
+      const data = await res.json();
+      if (!cancelled && Array.isArray(data)) setProducts(data);
     }
     void init();
     return () => { cancelled = true; };
@@ -110,8 +92,8 @@ export default function InventoryPage() {
     setEditingId(null);
     setShowForm(false);
     setImagePreview(null);
-    setSubcategorySearch("");
-    setSubcategoryOpen(false);
+    setSubcategoryDisplay("");
+    setSelectedCategoryName("");
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -153,13 +135,14 @@ export default function InventoryPage() {
     setFormData({
       name: p.name, description: p.description || "", hsn: p.hsn || "",
       sku: p.sku || "", unit: p.unit, categoryId: p.categoryId || "", subcategoryId: p.subcategoryId || "",
+      trackingMode: p.trackingMode,
       gstPercent: p.gstPercent, purchaseRate: p.purchaseRate,
       sellingRate: p.sellingRate, openingStock: p.openingStock,
       reorderLevel: p.reorderLevel, imageUrl: p.imageUrl || "",
     });
     setImagePreview(p.imageUrl);
-    setSubcategorySearch(p.subcategory?.name || "");
-    setSubcategoryOpen(false);
+    setSubcategoryDisplay(p.subcategory?.name || "");
+    setSelectedCategoryName(p.category?.name || "");
     setEditingId(p.id);
     setShowForm(true);
   }
@@ -172,40 +155,7 @@ export default function InventoryPage() {
   );
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
-  const subcategoryOptions = useMemo<SubcategoryOption[]>(
-    () =>
-      categories.flatMap((category) =>
-        category.subcategories.map((subcategory) => ({
-          id: subcategory.id,
-          name: subcategory.name,
-          categoryId: category.id,
-          categoryName: category.name,
-        }))
-      ),
-    [categories]
-  );
-  const filteredSubcategories = useMemo(
-    () =>
-      subcategoryOptions.filter((subcategory) => {
-        const query = subcategorySearch.trim().toLowerCase();
-        if (!query) return true;
-        return (
-          subcategory.name.toLowerCase().includes(query) ||
-          subcategory.categoryName.toLowerCase().includes(query)
-        );
-      }),
-    [subcategoryOptions, subcategorySearch]
-  );
-
-  function handleSubcategorySelect(subcategory: SubcategoryOption) {
-    setFormData({
-      ...formData,
-      categoryId: subcategory.categoryId,
-      subcategoryId: subcategory.id,
-    });
-    setSubcategorySearch(subcategory.name);
-    setSubcategoryOpen(false);
-  }
+  const isTrackedProduct = formData.trackingMode !== "NONE";
 
   return (
     <div>
@@ -239,47 +189,34 @@ export default function InventoryPage() {
                 </div>
                 <div>
                   <Label>Subcategory</Label>
-                  <div className="relative">
-                    <Input
-                      value={subcategorySearch}
-                      onChange={(e) => {
-                        setSubcategorySearch(e.target.value);
-                        setSubcategoryOpen(true);
-                        setFormData({
-                          ...formData,
-                          categoryId: "",
-                          subcategoryId: "",
-                        });
-                      }}
-                      onFocus={() => setSubcategoryOpen(true)}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          setSubcategoryOpen(false);
-                          if (!formData.subcategoryId) {
-                            setSubcategorySearch("");
-                          }
-                        }, 150);
-                      }}
-                      placeholder="Search subcategory"
-                    />
-                    {subcategoryOpen && filteredSubcategories.length > 0 && (
-                      <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
-                        {filteredSubcategories.map((subcategory) => (
-                          <button
-                            key={subcategory.id}
-                            type="button"
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
-                            onClick={() => handleSubcategorySelect(subcategory)}
-                          >
-                            <span>{subcategory.name}</span>
-                            <span className="text-xs text-[var(--muted-foreground)]">
-                              {subcategory.categoryName}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <SearchSelect
+                    value={formData.subcategoryId}
+                    displayValue={subcategoryDisplay}
+                    endpoint="/api/products/subcategories"
+                    placeholder="Search subcategory"
+                    mapResult={(row: { id: string; name: string; categoryId: string; categoryName: string }) => ({
+                      id: row.id,
+                      label: row.name,
+                      hint: row.categoryName,
+                      meta: { categoryId: row.categoryId, categoryName: row.categoryName },
+                    })}
+                    onChange={(opt) => {
+                      if (!opt) {
+                        setFormData({ ...formData, categoryId: "", subcategoryId: "" });
+                        setSubcategoryDisplay("");
+                        setSelectedCategoryName("");
+                        return;
+                      }
+                      const meta = (opt as { meta?: { categoryId: string; categoryName: string } }).meta;
+                      setFormData({
+                        ...formData,
+                        categoryId: meta?.categoryId || "",
+                        subcategoryId: opt.id,
+                      });
+                      setSubcategoryDisplay(opt.label);
+                      setSelectedCategoryName(meta?.categoryName || "");
+                    }}
+                  />
                 </div>
               </div>
 
@@ -291,11 +228,28 @@ export default function InventoryPage() {
                   </select>
                 </div>
                 <div>
+                  <Label>Stock Tracking</Label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    value={formData.trackingMode}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        trackingMode: e.target.value as "NONE" | "BATCH" | "SERIAL",
+                        openingStock:
+                          e.target.value === "NONE" ? formData.openingStock : 0,
+                      })
+                    }
+                  >
+                    <option value="NONE">Bulk / None</option>
+                    <option value="BATCH">Batch</option>
+                    <option value="SERIAL">Serial</option>
+                  </select>
+                </div>
+                <div>
                   <Label>Category</Label>
                   <Input
-                    value={
-                      subcategoryOptions.find((subcategory) => subcategory.id === formData.subcategoryId)?.categoryName || ""
-                    }
+                    value={selectedCategoryName}
                     placeholder="Auto-filled from subcategory"
                     readOnly
                   />
@@ -317,7 +271,20 @@ export default function InventoryPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <Label>Opening Stock</Label>
-                  <Input type="number" value={formData.openingStock} onChange={(e) => setFormData({ ...formData, openingStock: Number(e.target.value) })} min={0} />
+                  <Input
+                    type="number"
+                    value={formData.openingStock}
+                    onChange={(e) =>
+                      setFormData({ ...formData, openingStock: Number(e.target.value) })
+                    }
+                    min={0}
+                    disabled={isTrackedProduct}
+                  />
+                  {isTrackedProduct && (
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                      Batch and serial tracked products must start at zero and receive stock through purchase entries.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label>Reorder Level</Label>
@@ -421,6 +388,13 @@ export default function InventoryPage() {
                   </TableCell>
                   <TableCell className="align-middle font-medium">
                     {p.name}
+                    <span className="ml-2 text-[10px] uppercase tracking-wide text-slate-400">
+                      {p.trackingMode === "NONE"
+                        ? "bulk"
+                        : p.trackingMode === "BATCH"
+                          ? "batch"
+                          : "serial"}
+                    </span>
                     {(p.subcategory?.name || p.category?.name) ? (
                       <span className="ml-2 text-xs text-slate-400">
                         {p.subcategory?.name || p.category?.name}

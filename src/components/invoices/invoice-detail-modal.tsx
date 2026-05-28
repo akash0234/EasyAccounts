@@ -13,6 +13,15 @@ export interface InvoiceDetailItem {
   gstAmount?: number;
 }
 
+export interface InvoiceDetailAdditionalCharge {
+  name: string;
+  hsnSac?: string | null;
+  amount: number;
+  discountAmount?: number | null;
+  gstPercent: number;
+  gstAmount: number;
+}
+
 export interface InvoiceDetailParty {
   name: string;
   gstin?: string | null;
@@ -42,6 +51,9 @@ export interface InvoiceDetailData {
   vendor?: InvoiceDetailParty | null;
   facility?: InvoiceDetailFacility | null;
   items?: InvoiceDetailItem[];
+  additionalCharges?: InvoiceDetailAdditionalCharge[];
+  billingAddressSnapshot?: string | null;
+  shippingAddressSnapshot?: string | null;
 }
 
 interface InvoiceDetailModalProps {
@@ -114,11 +126,18 @@ export function InvoiceDetailModal({
               {invoice.customer.phone && (
                 <p className="text-xs text-[var(--muted-foreground)]">Phone: {invoice.customer.phone}</p>
               )}
-              {(invoice.customer.billingAddress || invoice.customer.address) && (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  {invoice.customer.billingAddress ?? invoice.customer.address}
-                  {invoice.customer.city ? `, ${invoice.customer.city}` : ""}
-                </p>
+              {invoice.billingAddressSnapshot && (
+                <>
+                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Bill To</p>
+                  <p className="text-xs">{invoice.billingAddressSnapshot}</p>
+                  {invoice.shippingAddressSnapshot &&
+                    invoice.shippingAddressSnapshot !== invoice.billingAddressSnapshot && (
+                      <>
+                        <p className="mt-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Ship To</p>
+                        <p className="text-xs">{invoice.shippingAddressSnapshot}</p>
+                      </>
+                    )}
+                </>
               )}
             </div>
           )}
@@ -184,6 +203,52 @@ export function InvoiceDetailModal({
               })}
             </tbody>
           </table>
+
+          {invoice.additionalCharges && invoice.additionalCharges.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                Other Charges
+              </p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] text-[var(--muted-foreground)]">
+                    <th className="py-2 text-left font-medium">#</th>
+                    <th className="py-2 text-left font-medium">Particulars</th>
+                    <th className="py-2 text-left font-medium">HSN/SAC</th>
+                    <th className="py-2 text-right font-medium">Amount</th>
+                    <th className="py-2 text-right font-medium">Disc</th>
+                    <th className="py-2 text-right font-medium">GST %</th>
+                    <th className="py-2 text-right font-medium">GST Amt</th>
+                    <th className="py-2 text-right font-medium">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.additionalCharges.map((c, i) => {
+                    const disc = c.discountAmount ?? 0;
+                    const taxable = Math.max(c.amount - disc, 0);
+                    const total = taxable + c.gstAmount;
+                    return (
+                      <tr
+                        key={i}
+                        className="border-b border-[var(--border)] last:border-0"
+                      >
+                        <td className="py-2 text-[var(--muted-foreground)]">{i + 1}</td>
+                        <td className="py-2">{c.name}</td>
+                        <td className="py-2">{c.hsnSac || "—"}</td>
+                        <td className="py-2 text-right">{fmt(c.amount)}</td>
+                        <td className="py-2 text-right">
+                          {disc > 0 ? `-${fmt(disc)}` : "—"}
+                        </td>
+                        <td className="py-2 text-right">{c.gstPercent}%</td>
+                        <td className="py-2 text-right">{fmt(c.gstAmount)}</td>
+                        <td className="py-2 text-right font-medium">{fmt(total)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="space-y-1 border-t border-[var(--border)] px-6 pb-6 pt-4">

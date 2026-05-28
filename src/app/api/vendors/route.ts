@@ -5,18 +5,35 @@ import { vendorSchema } from "@/lib/validations";
 import { generateCode } from "@/lib/code-generator";
 import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or, ilike } from "drizzle-orm";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.companyId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const url = new URL(req.url);
+  const q = (url.searchParams.get("q") || "").trim();
+  const limitParam = url.searchParams.get("limit");
+  const limit = limitParam ? Math.min(Number(limitParam) || 50, 200) : undefined;
+
+  const whereClauses = [eq(vendors.companyId, session.user.companyId)];
+  if (q) {
+    whereClauses.push(
+      or(
+        ilike(vendors.name, `%${q}%`),
+        ilike(vendors.gstin, `%${q}%`),
+        ilike(vendors.phone, `%${q}%`)
+      )!
+    );
+  }
+
   const data = await db.query.vendors.findMany({
-    where: eq(vendors.companyId, session.user.companyId),
+    where: and(...whereClauses),
     with: { ledgerAccount: true },
-    orderBy: (v, { desc }) => [desc(v.createdAt)],
+    orderBy: (v, { asc, desc }) => (q ? [asc(v.name)] : [desc(v.createdAt)]),
+    limit,
   });
 
   return NextResponse.json(data);

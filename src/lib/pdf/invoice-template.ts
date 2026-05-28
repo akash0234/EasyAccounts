@@ -55,6 +55,15 @@ export interface TemplateItem {
   expiryDate?: Date | string | null;
 }
 
+export interface TemplateAdditionalCharge {
+  name: string;
+  hsnSac?: string | null;
+  amount: number;
+  discountAmount?: number | null;
+  gstPercent: number;
+  gstAmount: number;
+}
+
 export interface TemplateInvoice {
   invoiceNumber: string;
   date: Date | string;
@@ -68,7 +77,10 @@ export interface TemplateInvoice {
   status: string;
   notes?: string | null;
   items: TemplateItem[];
+  additionalCharges?: TemplateAdditionalCharge[];
   financialYear?: string | null;
+  billingAddressSnapshot?: string | null;
+  shippingAddressSnapshot?: string | null;
 }
 
 export interface InvoiceTemplateData {
@@ -228,6 +240,11 @@ export function renderInvoiceHtml(data: InvoiceTemplateData): string {
     party.billingAddress ?? party.address,
     party.city, party.state, party.pincode,
   ]);
+  const billSnapshot = invoice.billingAddressSnapshot?.trim() || null;
+  const shipSnapshot = invoice.shippingAddressSnapshot?.trim() || null;
+  const billToText = billSnapshot ?? partyAddress;
+  const showShipPanel =
+    !!shipSnapshot && shipSnapshot !== (billSnapshot ?? "");
 
   const tax = splitTax(company.state, party.state, invoice.taxAmount);
   const balance = Math.max(invoice.totalAmount - invoice.paidAmount, 0);
@@ -266,6 +283,51 @@ export function renderInvoiceHtml(data: InvoiceTemplateData): string {
         <td class="num col-total strong">${formatCurrency(lineTotal)}</td>
       </tr>`;
   }).join("");
+
+  const charges = invoice.additionalCharges ?? [];
+  const chargesHtml = charges.length
+    ? `
+      <section class="other-charges">
+        <div class="oc-title">Other Charges</div>
+        <table class="items oc-table">
+          <thead>
+            <tr>
+              <th class="col-sn">#</th>
+              <th>Particulars</th>
+              <th class="col-hsn">HSN/SAC</th>
+              <th class="num">Amount</th>
+              <th class="num">Discount</th>
+              <th class="num">Taxable</th>
+              <th class="num col-gstp">GST %</th>
+              <th class="num col-gsta">GST Amt</th>
+              <th class="num col-total">Line Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${charges
+              .map((c, i) => {
+                const disc = c.discountAmount ?? 0;
+                const taxable = Math.max(c.amount - disc, 0);
+                const lineTotal = taxable + c.gstAmount;
+                return `
+                  <tr>
+                    <td class="col-sn">${i + 1}</td>
+                    <td>${escapeHtml(c.name)}</td>
+                    <td class="col-hsn">${c.hsnSac ? escapeHtml(c.hsnSac) : "—"}</td>
+                    <td class="num">${formatCurrency(c.amount)}</td>
+                    <td class="num">${disc > 0 ? `− ${formatCurrency(disc)}` : "—"}</td>
+                    <td class="num">${formatCurrency(taxable)}</td>
+                    <td class="num col-gstp">${formatNumber(c.gstPercent)}%</td>
+                    <td class="num col-gsta">${formatCurrency(c.gstAmount)}</td>
+                    <td class="num col-total strong">${formatCurrency(lineTotal)}</td>
+                  </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </section>
+    `
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -458,6 +520,18 @@ export function renderInvoiceHtml(data: InvoiceTemplateData): string {
       table.items tfoot { display: table-row-group; }
       table.items tr { page-break-inside: avoid; }
 
+      /* ── Other Charges ────────────────────────────────────── */
+      .other-charges { margin-top: 14px; }
+      .oc-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #475569;
+        margin-bottom: 6px;
+      }
+      .oc-table thead th { background: #f1f5f9 !important; color: #0f172a !important; }
+
       /* ── Totals block ───────────────────────────────────────── */
       .totals-wrap {
         display: grid;
@@ -619,12 +693,23 @@ export function renderInvoiceHtml(data: InvoiceTemplateData): string {
         <div class="addr-panel">
           <div class="addr-label">${partyLabel}</div>
           <div class="addr-name">${escapeHtml(party.name)}</div>
-          ${partyAddress ? `<div class="addr-sub">${escapeHtml(partyAddress)}</div>` : ""}
+          ${billToText ? `<div class="addr-sub">${escapeHtml(billToText)}</div>` : ""}
           ${party.gstin ? `<div class="addr-sub">GSTIN: ${escapeHtml(party.gstin)}</div>` : ""}
           ${party.phone ? `<div class="addr-sub">Phone: ${escapeHtml(party.phone)}</div>` : ""}
           ${party.email ? `<div class="addr-sub">Email: ${escapeHtml(party.email)}</div>` : ""}
         </div>
       </section>
+      ${
+        showShipPanel
+          ? `<section class="addr-grid" style="grid-template-columns: 1fr;">
+               <div class="addr-panel">
+                 <div class="addr-label">Ship To</div>
+                 <div class="addr-name">${escapeHtml(party.name)}</div>
+                 <div class="addr-sub">${escapeHtml(shipSnapshot!)}</div>
+               </div>
+             </section>`
+          : ""
+      }
 
       <!-- Items -->
       <table class="items">
@@ -645,6 +730,8 @@ export function renderInvoiceHtml(data: InvoiceTemplateData): string {
           ${rowsHtml}
         </tbody>
       </table>
+
+      ${chargesHtml}
 
       <!-- Totals -->
       <section class="totals-wrap">

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Download, Filter, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,12 +22,7 @@ import {
   formatDate,
   toCSV,
 } from "@/components/reports/report-shell";
-
-interface Vendor { id: string; name: string }
-interface Facility { id: string; name: string }
-interface Product { id: string; name: string; hsn?: string | null }
-interface Category { id: string; name: string; subcategories?: { id: string; name: string }[] }
-interface Subcategory { id: string; name: string; categoryId: string }
+import { SearchSelect } from "@/components/ui/search-select";
 
 interface ReportRow {
   id: string;
@@ -69,20 +64,21 @@ const firstOfMonth = () => {
 };
 
 export default function PurchaseReportPage() {
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [facilities, setFacilities] = useState<Facility[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
-
   const [from, setFrom] = useState(firstOfMonth());
   const [to, setTo] = useState(today());
+
   const [vendorId, setVendorId] = useState("");
+  const [vendorDisplay, setVendorDisplay] = useState("");
   const [facilityId, setFacilityId] = useState("");
-  const [status, setStatus] = useState("");
+  const [facilityDisplay, setFacilityDisplay] = useState("");
   const [productId, setProductId] = useState("");
+  const [productDisplay, setProductDisplay] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [categoryDisplay, setCategoryDisplay] = useState("");
   const [subcategoryId, setSubcategoryId] = useState("");
+  const [subcategoryDisplay, setSubcategoryDisplay] = useState("");
+
+  const [status, setStatus] = useState("");
   const [hsn, setHsn] = useState("");
   const [gstPercent, setGstPercent] = useState("");
   const [batchNo, setBatchNo] = useState("");
@@ -97,49 +93,9 @@ export default function PurchaseReportPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadMasters() {
-      const [vRes, fRes, pRes, catRes] = await Promise.all([
-        fetch("/api/vendors"),
-        fetch("/api/facilities"),
-        fetch("/api/products"),
-        fetch("/api/products/categories"),
-      ]);
-      const [vData, fData, pData, catData] = await Promise.all([
-        vRes.json(),
-        fRes.json(),
-        pRes.json(),
-        catRes.json(),
-      ]);
-      if (cancelled) return;
-      if (Array.isArray(vData)) setVendors(vData);
-      if (Array.isArray(fData)) setFacilities(fData);
-      if (Array.isArray(pData)) setProducts(pData);
-      if (Array.isArray(catData)) {
-        setCategories(catData);
-        const subs: Subcategory[] = [];
-        for (const c of catData) {
-          if (Array.isArray(c.subcategories)) {
-            for (const s of c.subcategories) {
-              subs.push({ id: s.id, name: s.name, categoryId: c.id });
-            }
-          }
-        }
-        setSubcategories(subs);
-      }
-    }
-    loadMasters();
     runReport();
-    return () => {
-      cancelled = true;
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const filteredSubcategories = useMemo(
-    () => (categoryId ? subcategories.filter((s) => s.categoryId === categoryId) : subcategories),
-    [categoryId, subcategories]
-  );
 
   function buildQuery() {
     const params = new URLSearchParams();
@@ -187,12 +143,12 @@ export default function PurchaseReportPage() {
   function resetFilters() {
     setFrom(firstOfMonth());
     setTo(today());
-    setVendorId("");
-    setFacilityId("");
+    setVendorId(""); setVendorDisplay("");
+    setFacilityId(""); setFacilityDisplay("");
+    setProductId(""); setProductDisplay("");
+    setCategoryId(""); setCategoryDisplay("");
+    setSubcategoryId(""); setSubcategoryDisplay("");
     setStatus("");
-    setProductId("");
-    setCategoryId("");
-    setSubcategoryId("");
     setHsn("");
     setGstPercent("");
     setBatchNo("");
@@ -251,20 +207,34 @@ export default function PurchaseReportPage() {
                 <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
               </Field>
               <Field label="Vendor">
-                <Select value={vendorId} onChange={setVendorId}>
-                  <option value="">All vendors</option>
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>{v.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={vendorId}
+                  displayValue={vendorDisplay}
+                  endpoint="/api/vendors"
+                  placeholder="All vendors"
+                  mapResult={(r: { id: string; name: string; gstin: string | null }) => ({
+                    id: r.id,
+                    label: r.name,
+                    hint: r.gstin ?? undefined,
+                  })}
+                  onChange={(opt) => {
+                    setVendorId(opt?.id ?? "");
+                    setVendorDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="Facility">
-                <Select value={facilityId} onChange={setFacilityId}>
-                  <option value="">All facilities</option>
-                  {facilities.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={facilityId}
+                  displayValue={facilityDisplay}
+                  endpoint="/api/facilities"
+                  placeholder="All facilities"
+                  mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                  onChange={(opt) => {
+                    setFacilityId(opt?.id ?? "");
+                    setFacilityDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="Status">
                 <Select value={status} onChange={setStatus}>
@@ -275,28 +245,53 @@ export default function PurchaseReportPage() {
                 </Select>
               </Field>
               <Field label="Category">
-                <Select value={categoryId} onChange={(v) => { setCategoryId(v); setSubcategoryId(""); }}>
-                  <option value="">All categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={categoryId}
+                  displayValue={categoryDisplay}
+                  endpoint="/api/products/categories"
+                  placeholder="All categories"
+                  mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                  onChange={(opt) => {
+                    setCategoryId(opt?.id ?? "");
+                    setCategoryDisplay(opt?.label ?? "");
+                    setSubcategoryId("");
+                    setSubcategoryDisplay("");
+                  }}
+                />
               </Field>
               <Field label="Subcategory">
-                <Select value={subcategoryId} onChange={setSubcategoryId}>
-                  <option value="">All subcategories</option>
-                  {filteredSubcategories.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={subcategoryId}
+                  displayValue={subcategoryDisplay}
+                  endpoint="/api/products/subcategories"
+                  placeholder="All subcategories"
+                  mapResult={(r: { id: string; name: string; categoryName: string }) => ({
+                    id: r.id,
+                    label: r.name,
+                    hint: r.categoryName,
+                  })}
+                  onChange={(opt) => {
+                    setSubcategoryId(opt?.id ?? "");
+                    setSubcategoryDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="Product">
-                <Select value={productId} onChange={setProductId}>
-                  <option value="">All products</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </Select>
+                <SearchSelect
+                  value={productId}
+                  displayValue={productDisplay}
+                  endpoint="/api/products"
+                  placeholder="All products"
+                  mapResult={(r: { id: string; name: string; hsn: string | null }) => ({
+                    id: r.id,
+                    label: r.name,
+                    hint: r.hsn ?? undefined,
+                  })}
+                  onChange={(opt) => {
+                    setProductId(opt?.id ?? "");
+                    setProductDisplay(opt?.label ?? "");
+                  }}
+                />
               </Field>
               <Field label="HSN">
                 <Input value={hsn} onChange={(e) => setHsn(e.target.value)} placeholder="e.g. 8528" />
@@ -360,21 +355,33 @@ export default function PurchaseReportPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
+            <Table className="min-w-[70rem] table-fixed">
+              <colgroup>
+                <col className="w-[7rem]" />
+                <col className="w-[8rem]" />
+                <col />
+                <col className="w-[8rem]" />
+                <col className="w-[6rem]" />
+                <col className="w-[7rem]" />
+                <col className="w-[6rem]" />
+                <col className="w-[7rem]" />
+                <col className="w-[6rem]" />
+                <col className="w-[7rem]" />
+              </colgroup>
+              <TableHead>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Bill #</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Facility</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Subtotal</TableHead>
-                  <TableHead className="text-right">Tax</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead className="text-right">Paid</TableHead>
-                  <TableHead className="text-right">Payable</TableHead>
+                  <TableHeader className="rounded-l-md bg-rubick-primary text-white">Date</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Bill #</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Vendor</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Facility</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Status</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">Subtotal</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">Tax</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">Total</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-right text-white">Paid</TableHeader>
+                  <TableHeader className="rounded-r-md bg-rubick-primary text-right text-white">Payable</TableHeader>
                 </TableRow>
-              </TableHeader>
+              </TableHead>
               <TableBody>
                 {rows.length === 0 ? (
                   <TableRow>
@@ -385,16 +392,16 @@ export default function PurchaseReportPage() {
                 ) : (
                   rows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell>{formatDate(r.date)}</TableCell>
-                      <TableCell className="font-medium">{r.invoiceNumber}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-nowrap align-middle">{formatDate(r.date)}</TableCell>
+                      <TableCell className="align-middle font-medium">{r.invoiceNumber}</TableCell>
+                      <TableCell className="align-middle">
                         <div>{r.vendor?.name ?? "—"}</div>
                         {r.vendor?.gstin && (
                           <div className="text-xs text-slate-500">{r.vendor.gstin}</div>
                         )}
                       </TableCell>
-                      <TableCell>{r.facility?.name ?? "—"}</TableCell>
-                      <TableCell>
+                      <TableCell className="align-middle">{r.facility?.name ?? "—"}</TableCell>
+                      <TableCell className="align-middle">
                         <Badge
                           variant={
                             r.status === "PAID"
@@ -407,11 +414,11 @@ export default function PurchaseReportPage() {
                           {r.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{formatINR(r.subtotal)}</TableCell>
-                      <TableCell className="text-right">{formatINR(r.taxAmount)}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatINR(r.totalAmount)}</TableCell>
-                      <TableCell className="text-right">{formatINR(r.paidAmount)}</TableCell>
-                      <TableCell className="text-right">{formatINR(r.outstanding)}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right">{formatINR(r.subtotal)}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right">{formatINR(r.taxAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right font-semibold">{formatINR(r.totalAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right">{formatINR(r.paidAmount)}</TableCell>
+                      <TableCell className="whitespace-nowrap align-middle text-right">{formatINR(r.outstanding)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -494,15 +501,18 @@ function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
     <Card>
       <CardContent className="p-0">
         <Table>
-          <TableHeader>
+          <TableHead>
             <TableRow>
-              {columns.map((c) => (
-                <TableHead key={c.key} className={c.align === "right" ? "text-right" : undefined}>
+              {columns.map((c, i) => (
+                <TableHeader
+                  key={c.key}
+                  className={`bg-rubick-primary text-white ${c.align === "right" ? "text-right" : ""} ${i === 0 ? "rounded-l-md" : ""} ${i === columns.length - 1 ? "rounded-r-md" : ""}`}
+                >
                   {c.label}
-                </TableHead>
+                </TableHeader>
               ))}
             </TableRow>
-          </TableHeader>
+          </TableHead>
           <TableBody>
             {rows.map((r, i) => (
               <TableRow key={i}>
@@ -514,7 +524,7 @@ function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
                     ? "—"
                     : String(v);
                   return (
-                    <TableCell key={c.key} className={c.align === "right" ? "text-right" : undefined}>
+                    <TableCell key={c.key} className={c.align === "right" ? "align-middle text-right" : "align-middle"}>
                       {display}
                     </TableCell>
                   );

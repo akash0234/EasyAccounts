@@ -68,6 +68,15 @@ export const stockMovementTypeEnum = pgEnum("stock_movement_type", [
   "OUT",
   "ADJUST",
 ]);
+export const stockTrackingModeEnum = pgEnum("stock_tracking_mode", [
+  "NONE",
+  "BATCH",
+  "SERIAL",
+]);
+export const stockDetailStatusEnum = pgEnum("stock_detail_status", [
+  "AVAILABLE",
+  "SOLD",
+]);
 
 // ============================================
 // AUTH & MULTI-TENANCY
@@ -191,17 +200,33 @@ export const customers = pgTable(
     pan: text("pan"),
     phone: text("phone"),
     email: text("email"),
-    billingAddress: text("billing_address"),
-    shippingAddress: text("shipping_address"),
-    city: text("city"),
-    state: text("state"),
-    pincode: text("pincode"),
     creditLimit: real("credit_limit").default(0).notNull(),
     openingBalance: real("opening_balance").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("customer_company_idx").on(table.companyId)]
+);
+
+export const customerAddresses = pgTable(
+  "customer_addresses",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    label: text("label"),
+    line1: text("line1").notNull(),
+    city: text("city"),
+    state: text("state"),
+    pincode: text("pincode"),
+    isDefault: boolean("is_default").default(false).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("customer_address_customer_idx").on(table.customerId)]
 );
 
 export const vendors = pgTable(
@@ -324,6 +349,11 @@ export const invoices = pgTable(
     paidAmount: real("paid_amount").default(0).notNull(),
     status: invoiceStatusEnum("status").default("UNPAID").notNull(),
     notes: text("notes"),
+    billingAddressSnapshot: text("billing_address_snapshot"),
+    shippingAddressSnapshot: text("shipping_address_snapshot"),
+    deliveryEnabled: boolean("delivery_enabled").default(false).notNull(),
+    deliveryMode: text("delivery_mode"),
+    deliveryReference: text("delivery_reference"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -355,6 +385,53 @@ export const invoiceItems = pgTable("invoice_items", {
   slNo: text("sl_no"),
   expiryDate: timestamp("expiry_date"),
 });
+
+export const invoiceAdditionalCharges = pgTable(
+  "invoice_additional_charges",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    hsnSac: text("hsn_sac"),
+    amount: real("amount").default(0).notNull(),
+    discountAmount: real("discount_amount").default(0).notNull(),
+    gstPercent: real("gst_percent").default(0).notNull(),
+    gstAmount: real("gst_amount").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("invoice_addl_charge_invoice_idx").on(table.invoiceId)]
+);
+
+export const additionalChargeCatalog = pgTable(
+  "additional_charge_catalog",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    hsnSac: text("hsn_sac"),
+    defaultAmount: real("default_amount").default(0).notNull(),
+    defaultDiscountAmount: real("default_discount_amount").default(0).notNull(),
+    gstPercent: real("gst_percent").default(0).notNull(),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("additional_charge_catalog_company_idx").on(table.companyId),
+    uniqueIndex("additional_charge_catalog_name_company_idx").on(
+      table.companyId,
+      table.name
+    ),
+  ]
+);
 
 // ============================================
 // PAYMENTS
@@ -504,6 +581,9 @@ export const products = pgTable(
     unit: unitEnum("unit").default("PCS").notNull(),
     categoryId: text("category_id").references(() => categories.id),
     subcategoryId: text("subcategory_id").references(() => subcategories.id),
+    trackingMode: stockTrackingModeEnum("tracking_mode")
+      .default("NONE")
+      .notNull(),
     gstPercent: real("gst_percent").default(0).notNull(),
     purchaseRate: real("purchase_rate").default(0).notNull(),
     sellingRate: real("selling_rate").default(0).notNull(),
@@ -540,6 +620,73 @@ export const stockMovements = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("stock_product_idx").on(table.companyId, table.productId)]
+);
+
+export const stockDetails = pgTable(
+  "stock_details",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    facilityId: text("facility_id")
+      .notNull()
+      .references(() => facilities.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    batchNo: text("batch_no"),
+    serialNo: text("serial_no"),
+    expiryDate: timestamp("expiry_date"),
+    quantity: real("quantity").default(0).notNull(),
+    availableQty: real("available_qty").default(0).notNull(),
+    status: stockDetailStatusEnum("status").default("AVAILABLE").notNull(),
+    sourceInvoiceId: text("source_invoice_id").references(() => invoices.id, {
+      onDelete: "set null",
+    }),
+    sourceInvoiceItemId: text("source_invoice_item_id").references(
+      () => invoiceItems.id,
+      { onDelete: "set null" }
+    ),
+    soldInvoiceId: text("sold_invoice_id").references(() => invoices.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("stock_detail_company_product_idx").on(table.companyId, table.productId),
+    index("stock_detail_facility_product_idx").on(table.facilityId, table.productId),
+    index("stock_detail_batch_idx").on(table.productId, table.batchNo),
+    uniqueIndex("stock_detail_serial_company_product_idx").on(
+      table.companyId,
+      table.productId,
+      table.serialNo
+    ),
+  ]
+);
+
+export const invoiceItemAllocations = pgTable(
+  "invoice_item_allocations",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    invoiceItemId: text("invoice_item_id")
+      .notNull()
+      .references(() => invoiceItems.id, { onDelete: "cascade" }),
+    stockDetailId: text("stock_detail_id")
+      .notNull()
+      .references(() => stockDetails.id, { onDelete: "cascade" }),
+    quantity: real("quantity").default(0).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("invoice_item_alloc_invoice_item_idx").on(table.invoiceItemId),
+    index("invoice_item_alloc_stock_detail_idx").on(table.stockDetailId),
+  ]
 );
 
 export const facilityStock = pgTable(
@@ -611,6 +758,7 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   facilities: many(facilities),
   categories: many(categories),
   subcategories: many(subcategories),
+  additionalChargeCatalog: many(additionalChargeCatalog),
 }));
 
 export const companyMembersRelations = relations(
@@ -650,7 +798,18 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   }),
   invoices: many(invoices),
   payments: many(payments),
+  addresses: many(customerAddresses),
 }));
+
+export const customerAddressesRelations = relations(
+  customerAddresses,
+  ({ one }) => ({
+    customer: one(customers, {
+      fields: [customerAddresses.customerId],
+      references: [customers.id],
+    }),
+  })
+);
 
 export const vendorsRelations = relations(vendors, ({ one, many }) => ({
   company: one(companies, {
@@ -721,10 +880,13 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     references: [facilities.id],
   }),
   items: many(invoiceItems),
+  additionalCharges: many(invoiceAdditionalCharges),
   paymentAllocations: many(paymentAllocations),
+  sourcedStockDetails: many(stockDetails, { relationName: "sourceInvoiceStockDetails" }),
+  soldStockDetails: many(stockDetails, { relationName: "soldInvoiceStockDetails" }),
 }));
 
-export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
+export const invoiceItemsRelations = relations(invoiceItems, ({ one, many }) => ({
   invoice: one(invoices, {
     fields: [invoiceItems.invoiceId],
     references: [invoices.id],
@@ -733,7 +895,29 @@ export const invoiceItemsRelations = relations(invoiceItems, ({ one }) => ({
     fields: [invoiceItems.productId],
     references: [products.id],
   }),
+  sourceStockDetails: many(stockDetails),
+  allocations: many(invoiceItemAllocations),
 }));
+
+export const invoiceAdditionalChargesRelations = relations(
+  invoiceAdditionalCharges,
+  ({ one }) => ({
+    invoice: one(invoices, {
+      fields: [invoiceAdditionalCharges.invoiceId],
+      references: [invoices.id],
+    }),
+  })
+);
+
+export const additionalChargeCatalogRelations = relations(
+  additionalChargeCatalog,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [additionalChargeCatalog.companyId],
+      references: [companies.id],
+    }),
+  })
+);
 
 export const paymentsRelations = relations(payments, ({ one, many }) => ({
   company: one(companies, {
@@ -828,7 +1012,52 @@ export const facilitiesRelations = relations(facilities, ({ one, many }) => ({
   invoices: many(invoices),
   stockMovements: many(stockMovements),
   facilityStock: many(facilityStock),
+  stockDetails: many(stockDetails),
 }));
+
+export const stockDetailsRelations = relations(stockDetails, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [stockDetails.companyId],
+    references: [companies.id],
+  }),
+  facility: one(facilities, {
+    fields: [stockDetails.facilityId],
+    references: [facilities.id],
+  }),
+  product: one(products, {
+    fields: [stockDetails.productId],
+    references: [products.id],
+  }),
+  sourceInvoice: one(invoices, {
+    relationName: "sourceInvoiceStockDetails",
+    fields: [stockDetails.sourceInvoiceId],
+    references: [invoices.id],
+  }),
+  soldInvoice: one(invoices, {
+    relationName: "soldInvoiceStockDetails",
+    fields: [stockDetails.soldInvoiceId],
+    references: [invoices.id],
+  }),
+  sourceInvoiceItem: one(invoiceItems, {
+    fields: [stockDetails.sourceInvoiceItemId],
+    references: [invoiceItems.id],
+  }),
+  allocations: many(invoiceItemAllocations),
+}));
+
+export const invoiceItemAllocationsRelations = relations(
+  invoiceItemAllocations,
+  ({ one }) => ({
+    invoiceItem: one(invoiceItems, {
+      fields: [invoiceItemAllocations.invoiceItemId],
+      references: [invoiceItems.id],
+    }),
+    stockDetail: one(stockDetails, {
+      fields: [invoiceItemAllocations.stockDetailId],
+      references: [stockDetails.id],
+    }),
+  })
+);
 
 export const facilityStockRelations = relations(facilityStock, ({ one }) => ({
   company: one(companies, {
