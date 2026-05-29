@@ -12,12 +12,14 @@ import {
   facilityStock,
   products,
   stockDetails,
+  customers,
+  vendors,
 } from "@/db/schema";
 import { invoiceSchema } from "@/lib/validations";
 import { generateCode } from "@/lib/code-generator";
 import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, ilike, or, gte, lte, type SQL } from "drizzle-orm";
 
 type TrackingMode = "NONE" | "BATCH" | "SERIAL";
 
@@ -123,12 +125,90 @@ export async function GET(req: NextRequest) {
   }
 
   const type = req.nextUrl.searchParams.get("type") || "SALES";
+  const q = req.nextUrl.searchParams.get("q")?.trim();
+  const status = req.nextUrl.searchParams.get("status");
+  const from = req.nextUrl.searchParams.get("from");
+  const to = req.nextUrl.searchParams.get("to");
+  const customerId = req.nextUrl.searchParams.get("customerId");
+  const vendorId = req.nextUrl.searchParams.get("vendorId");
+  const facilityId = req.nextUrl.searchParams.get("facilityId");
+  const pageParam = Number(req.nextUrl.searchParams.get("page") || "0");
+  const pageSizeParam = Number(req.nextUrl.searchParams.get("pageSize") || "25");
+  const wantsPagination = req.nextUrl.searchParams.has("page") || req.nextUrl.searchParams.has("pageSize");
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const pageSize =
+    Number.isFinite(pageSizeParam) && pageSizeParam > 0
+      ? Math.min(Math.floor(pageSizeParam), 100)
+      : 25;
+
+  const conditions: SQL[] = [
+    eq(invoices.companyId, session.user.companyId),
+    eq(invoices.type, type as "SALES" | "PURCHASE"),
+  ];
+
+  if (status) {
+    conditions.push(eq(invoices.status, status as "UNPAID" | "PARTIAL" | "PAID"));
+  }
+
+  if (from) {
+    conditions.push(gte(invoices.date, new Date(from)));
+  }
+
+  if (to) {
+    const end = new Date(to);
+    end.setHours(23, 59, 59, 999);
+    conditions.push(lte(invoices.date, end));
+  }
+
+  if (customerId) {
+    conditions.push(eq(invoices.customerId, customerId));
+  }
+
+  if (vendorId) {
+    conditions.push(eq(invoices.vendorId, vendorId));
+  }
+
+  if (facilityId) {
+    conditions.push(eq(invoices.facilityId, facilityId));
+  }
+
+  if (q) {
+    const like = `%${q}%`;
+    const partyMatches =
+      type === "PURCHASE"
+        ? await db
+            .select({ id: vendors.id })
+            .from(vendors)
+            .where(
+              and(
+                eq(vendors.companyId, session.user.companyId),
+                or(ilike(vendors.name, like), ilike(vendors.gstin, like), ilike(vendors.phone, like))
+              )
+            )
+        : await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(
+              and(
+                eq(customers.companyId, session.user.companyId),
+                or(ilike(customers.name, like), ilike(customers.gstin, like), ilike(customers.phone, like))
+              )
+            );
+    const partyIds = partyMatches.map((row) => row.id);
+    conditions.push(
+      or(
+        ilike(invoices.invoiceNumber, like),
+        partyIds.length > 0
+          ? type === "PURCHASE"
+            ? inArray(invoices.vendorId, partyIds)
+            : inArray(invoices.customerId, partyIds)
+          : sql`false`
+      )!
+    );
+  }
 
   const data = await db.query.invoices.findMany({
-    where: and(
-      eq(invoices.companyId, session.user.companyId),
-      eq(invoices.type, type as "SALES" | "PURCHASE")
-    ),
+    where: and(...conditions),
     with: {
       customer: true,
       vendor: true,
@@ -145,7 +225,26 @@ export async function GET(req: NextRequest) {
       additionalCharges: true,
     },
     orderBy: (i, { desc }) => [desc(i.date)],
+    ...(wantsPagination ? { limit: pageSize, offset: (page - 1) * pageSize } : {}),
   });
+
+  if (wantsPagination) {
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoices)
+      .where(and(...conditions));
+    const total = Number(totalResult[0]?.count ?? 0);
+
+    return NextResponse.json({
+      data,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    });
+  }
 
   return NextResponse.json(data);
 }

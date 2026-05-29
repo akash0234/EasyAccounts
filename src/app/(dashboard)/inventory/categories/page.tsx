@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon } from "lucide-react";
 
 interface Subcategory {
   id: string;
@@ -36,8 +36,15 @@ interface Category {
 export default function CategoriesPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterIsActive, setFilterIsActive] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Category form
   const [showCatForm, setShowCatForm] = useState(false);
@@ -51,21 +58,44 @@ export default function CategoriesPage() {
   const [subName, setSubName] = useState("");
   const [subDesc, setSubDesc] = useState("");
 
-  async function fetchCategories() {
-    try {
-      const res = await fetch("/api/products/categories");
-      if (res.ok) {
-        const data = await res.json();
-        setCategories(data);
-      }
-    } finally {
-      setLoading(false);
+  async function fetchCategories(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (filterIsActive) params.set("isActive", filterIsActive);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const res = await fetch(`/api/products/categories?${params}`);
+    const data = await res.json();
+    if (data.data) {
+      setCategories(data.data);
+      setTotal(data.pagination?.total || 0);
+    } else if (Array.isArray(data)) {
+      setCategories(data);
+      setTotal(data.length);
     }
+    setListLoading(false);
   }
 
   useEffect(() => {
     fetchCategories();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterIsActive, pageSize]);
+
+  useEffect(() => {
+    fetchCategories(page);
+  }, [page, pageSize, debouncedSearch, filterIsActive]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -143,11 +173,10 @@ export default function CategoriesPage() {
     if (res.ok) fetchCategories();
   }
 
-  const filtered = categories.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.subcategories.some((s) => s.name.toLowerCase().includes(search.toLowerCase()))
-  );
+  function resetFilters() {
+    setSearch("");
+    setFilterIsActive("");
+  }
 
   return (
     <div className="space-y-6">
@@ -171,8 +200,22 @@ export default function CategoriesPage() {
             className="pl-9"
           />
         </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={filterIsActive}
+            onChange={(e) => setFilterIsActive(e.target.value)}
+          >
+            <option value="">All Status</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+          <Button variant="outline" size="sm" onClick={resetFilters}>
+            Reset
+          </Button>
+        </div>
         <div className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm">
-          {filtered.length} total
+          {total} total
         </div>
       </div>
 
@@ -233,10 +276,10 @@ export default function CategoriesPage() {
             Loading categories...
           </CardContent>
         </Card>
-      ) : filtered.length === 0 ? (
+      ) : categories.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No categories found. Create one to get started.
+            {listLoading ? "Loading..." : "No categories found. Create one to get started."}
           </CardContent>
         </Card>
       ) : (
@@ -264,7 +307,7 @@ export default function CategoriesPage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filtered.map((cat) => {
+                {categories.map((cat) => {
                   const expanded = expandedIds.has(cat.id);
                   return (
                     <Fragment key={cat.id}>
@@ -354,6 +397,48 @@ export default function CategoriesPage() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {categories.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span>Rows per page</span>
+            <select
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || listLoading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-[var(--muted-foreground)]">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || listLoading}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              <ChevronRightIcon className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

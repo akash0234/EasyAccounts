@@ -143,6 +143,34 @@ export const companies = pgTable("companies", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const companyPaymentSettings = pgTable(
+  "company_payment_settings",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    type: paymentMethodEnum("type").notNull(),
+    label: text("label").notNull(),
+    isDefault: boolean("is_default").default(false).notNull(),
+    upiId: text("upi_id"),
+    upiPayeeName: text("upi_payee_name"),
+    qrImageUrl: text("qr_image_url"),
+    bankAccountName: text("bank_account_name"),
+    bankAccountNumber: text("bank_account_number"),
+    bankIfsc: text("bank_ifsc"),
+    bankName: text("bank_name"),
+    bankBranch: text("bank_branch"),
+    chequePayeeName: text("cheque_payee_name"),
+    instructions: text("instructions"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [index("company_payment_settings_company_idx").on(table.companyId)]
+);
+
 export const companyMembers = pgTable(
   "company_members",
   {
@@ -759,7 +787,18 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   categories: many(categories),
   subcategories: many(subcategories),
   additionalChargeCatalog: many(additionalChargeCatalog),
+  paymentSettings: many(companyPaymentSettings),
 }));
+
+export const companyPaymentSettingsRelations = relations(
+  companyPaymentSettings,
+  ({ one }) => ({
+    company: one(companies, {
+      fields: [companyPaymentSettings.companyId],
+      references: [companies.id],
+    }),
+  })
+);
 
 export const companyMembersRelations = relations(
   companyMembers,

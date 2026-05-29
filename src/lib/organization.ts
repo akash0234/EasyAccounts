@@ -121,6 +121,7 @@ export async function getOrganizationCompanies(organizationId: string) {
           user: true,
         },
       },
+      paymentSettings: true,
     },
     orderBy: (company, { asc }) => [asc(company.name)],
   });

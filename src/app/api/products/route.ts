@@ -5,7 +5,7 @@ import { productSchema } from "@/lib/validations";
 import { generateCode } from "@/lib/code-generator";
 import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
-import { eq, and, or, ilike } from "drizzle-orm";
+import { eq, and, or, ilike, sql, type SQL } from "drizzle-orm";
 
 async function findOpeningStockFacility(companyId: string) {
   const defaultFacility = await db.query.facilities.findFirst({
@@ -36,10 +36,19 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
-  const limitParam = url.searchParams.get("limit");
-  const limit = limitParam ? Math.min(Number(limitParam) || 50, 200) : undefined;
+  const categoryId = url.searchParams.get("categoryId");
+  const subcategoryId = url.searchParams.get("subcategoryId");
+  const isActive = url.searchParams.get("isActive");
+  const pageParam = Number(url.searchParams.get("page") || "0");
+  const pageSizeParam = Number(url.searchParams.get("pageSize") || "25");
+  const wantsPagination = url.searchParams.has("page") || url.searchParams.has("pageSize");
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const pageSize =
+    Number.isFinite(pageSizeParam) && pageSizeParam > 0
+      ? Math.min(Math.floor(pageSizeParam), 100)
+      : 25;
 
-  const whereClauses = [eq(products.companyId, session.user.companyId)];
+  const whereClauses: SQL[] = [eq(products.companyId, session.user.companyId)];
   if (q) {
     whereClauses.push(
       or(
@@ -50,15 +59,40 @@ export async function GET(req: NextRequest) {
       )!
     );
   }
+  if (categoryId) {
+    whereClauses.push(eq(products.categoryId, categoryId));
+  }
+  if (subcategoryId) {
+    whereClauses.push(eq(products.subcategoryId, subcategoryId));
+  }
+  if (isActive !== null && isActive !== undefined && isActive !== "") {
+    whereClauses.push(eq(products.isActive, isActive === "true"));
+  }
 
   const data = await db.query.products.findMany({
     where: and(...whereClauses),
     with: { category: true, subcategory: true },
     orderBy: (p, { asc, desc }) => (q ? [asc(p.name)] : [desc(p.createdAt)]),
-    limit,
+    ...(wantsPagination ? { limit: pageSize, offset: (page - 1) * pageSize } : {}),
   });
 
   if (q) {
+    if (wantsPagination) {
+      const totalResult = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(products)
+        .where(and(...whereClauses));
+      const total = Number(totalResult[0]?.count ?? 0);
+      return NextResponse.json({
+        data,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        },
+      });
+    }
     return NextResponse.json(data);
   }
 
@@ -79,6 +113,23 @@ export async function GET(req: NextRequest) {
         currentStock: fs.currentStock,
       })),
   }));
+
+  if (wantsPagination) {
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(products)
+      .where(and(...whereClauses));
+    const total = Number(totalResult[0]?.count ?? 0);
+    return NextResponse.json({
+      data: enriched,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    });
+  }
 
   return NextResponse.json(enriched);
 }

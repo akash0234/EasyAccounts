@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye, Download } from "lucide-react";
+import { Plus, X, Trash2, Eye, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -137,45 +137,82 @@ export default function PurchasesPage() {
   const [batchDraftByRow, setBatchDraftByRow] = useState<
     Record<number, { batchNo: string; quantity: string }>
   >({});
+  const [listLoading, setListLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterVendorId, setFilterVendorId] = useState("");
+  const [filterVendorDisplay, setFilterVendorDisplay] = useState("");
+  const [filterFacilityId, setFilterFacilityId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function load() {
-    const [invRes, vendRes, prodRes, facRes] = await Promise.all([
-      fetch("/api/invoices?type=PURCHASE"),
+  async function loadInvoices(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams({
+      type: "PURCHASE",
+      page: String(nextPage),
+      pageSize: String(pageSize),
+    });
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (filterFrom) params.set("from", filterFrom);
+    if (filterTo) params.set("to", filterTo);
+    if (filterStatus) params.set("status", filterStatus);
+    if (filterVendorId) params.set("vendorId", filterVendorId);
+    if (filterFacilityId) params.set("facilityId", filterFacilityId);
+
+    const invRes = await fetch(`/api/invoices?${params.toString()}`);
+    const invData = await invRes.json();
+    if (Array.isArray(invData)) {
+      setInvoices(invData);
+      setTotal(invData.length);
+    } else {
+      setInvoices(invData.data ?? []);
+      setTotal(invData.pagination?.total ?? 0);
+    }
+    setListLoading(false);
+  }
+
+  async function loadReferenceData() {
+    const [vendRes, prodRes, facRes] = await Promise.all([
       fetch("/api/vendors"),
       fetch("/api/products"),
       fetch("/api/facilities"),
     ]);
-    const [invData, vendData, prodData, facData] = await Promise.all([
-      invRes.json(),
+    const [vendData, prodData, facData] = await Promise.all([
       vendRes.json(),
       prodRes.json(),
       facRes.json(),
     ]);
-    if (Array.isArray(invData)) setInvoices(invData);
     if (Array.isArray(vendData)) setVendors(vendData);
     if (Array.isArray(prodData)) setProductsList(prodData);
     if (Array.isArray(facData)) setFacilitiesList(facData);
+  }
+
+  async function load() {
+    await Promise.all([loadInvoices(), loadReferenceData()]);
   }
 
   useEffect(() => {
     let cancelled = false;
 
     async function initializePurchases() {
-      const [invRes, vendRes, prodRes, facRes] = await Promise.all([
-        fetch("/api/invoices?type=PURCHASE"),
+      const [vendRes, prodRes, facRes] = await Promise.all([
         fetch("/api/vendors"),
         fetch("/api/products"),
         fetch("/api/facilities"),
       ]);
-      const [invData, vendData, prodData, facData] = await Promise.all([
-        invRes.json(),
+      const [vendData, prodData, facData] = await Promise.all([
         vendRes.json(),
         prodRes.json(),
         facRes.json(),
       ]);
 
       if (cancelled) return;
-      if (Array.isArray(invData)) setInvoices(invData);
       if (Array.isArray(vendData)) setVendors(vendData);
       if (Array.isArray(prodData)) setProductsList(prodData);
       if (Array.isArray(facData)) setFacilitiesList(facData);
@@ -187,6 +224,20 @@ export default function PurchasesPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterFrom, filterTo, filterStatus, filterVendorId, filterFacilityId, pageSize]);
+
+  useEffect(() => {
+    void loadInvoices(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, debouncedSearch, filterFrom, filterTo, filterStatus, filterVendorId, filterFacilityId]);
 
   function updateItem(idx: number, field: keyof InvoiceItem, value: string | number) {
     const updated = [...items];
@@ -710,6 +761,97 @@ export default function PurchasesPage() {
         </Card>
       )}
 
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <div className="xl:col-span-2">
+              <Label>Search</Label>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Bill #, vendor, GSTIN, phone"
+              />
+            </div>
+            <div>
+              <Label>From</Label>
+              <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>To</Label>
+              <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="UNPAID">Unpaid</option>
+                <option value="PARTIAL">Partial</option>
+                <option value="PAID">Paid</option>
+              </select>
+            </div>
+            <div>
+              <Label>Vendor</Label>
+              <SearchSelect
+                value={filterVendorId}
+                displayValue={filterVendorDisplay}
+                endpoint="/api/vendors"
+                placeholder="All vendors"
+                mapResult={(r: { id: string; name: string; gstin?: string | null }) => ({
+                  id: r.id,
+                  label: r.name,
+                  hint: r.gstin ?? undefined,
+                })}
+                onChange={(opt) => {
+                  setFilterVendorId(opt?.id ?? "");
+                  setFilterVendorDisplay(opt?.label ?? "");
+                }}
+              />
+            </div>
+            <div>
+              <Label>Facility</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterFacilityId}
+                onChange={(e) => setFilterFacilityId(e.target.value)}
+              >
+                <option value="">All facilities</option>
+                {facilitiesList.map((facility) => (
+                  <option key={facility.id} value={facility.id}>
+                    {facility.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                setDebouncedSearch("");
+                setFilterFrom("");
+                setFilterTo("");
+                setFilterStatus("");
+                setFilterVendorId("");
+                setFilterVendorDisplay("");
+                setFilterFacilityId("");
+                setPage(1);
+              }}
+            >
+              Reset filters
+            </Button>
+            <div className="text-sm text-[var(--muted-foreground)]">
+              {listLoading ? "Loading…" : `Showing ${invoices.length === 0 ? 0 : (page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           <Table className="min-w-full table-fixed">
@@ -804,6 +946,46 @@ export default function PurchasesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
       {viewInvoice && (
         <InvoiceDetailModal

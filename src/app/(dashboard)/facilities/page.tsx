@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Facility {
   id: string;
@@ -26,18 +26,38 @@ interface Facility {
 
 export default function FacilitiesPage() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     address: "",
     isDefault: false,
   });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function loadFacilities() {
-    const res = await fetch("/api/facilities");
+  async function loadFacilities(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const res = await fetch(`/api/facilities?${params}`);
     const data = await res.json();
-    if (Array.isArray(data)) setFacilities(data);
+    if (data.data) {
+      setFacilities(data.data);
+      setTotal(data.pagination?.total || 0);
+    } else if (Array.isArray(data)) {
+      setFacilities(data);
+      setTotal(data.length);
+    }
+    setListLoading(false);
   }
 
   useEffect(() => {
@@ -50,6 +70,21 @@ export default function FacilitiesPage() {
     void init();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, pageSize]);
+
+  useEffect(() => {
+    loadFacilities(page);
+  }, [page, pageSize, debouncedSearch]);
 
   function resetForm() {
     setFormData({ name: "", address: "", isDefault: false });
@@ -105,6 +140,11 @@ export default function FacilitiesPage() {
         </Card>
       )}
 
+      <div className="mb-4 relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input className="pl-9" placeholder="Search by name..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -126,7 +166,7 @@ export default function FacilitiesPage() {
             </TableHead>
             <TableBody>
               {facilities.length === 0 ? (
-                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No facilities yet. Add your first warehouse or godown.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">{listLoading ? "Loading..." : "No facilities yet. Add your first warehouse or godown."}</TableCell></TableRow>
               ) : (
                 facilities.map((f) => (
                   <TableRow key={f.id}>
@@ -142,6 +182,46 @@ export default function FacilitiesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

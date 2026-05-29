@@ -24,6 +24,10 @@ export const organizationCompanySchema = z.object({
   pan: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  pincode: z.string().optional(),
 });
 
 export const organizationUserSchema = z.object({
@@ -50,8 +54,21 @@ export const companySchema = z.object({
   state: z.string().optional(),
   pincode: z.string().optional(),
 });
-
-// Customer
+export const companyPaymentSettingSchema = z.object({
+  type: z.enum(["CASH", "BANK", "UPI", "CHEQUE"]),
+  label: z.string().min(1, "Label is required"),
+  isDefault: z.boolean().optional().default(false),
+  upiId: z.string().optional(),
+  upiPayeeName: z.string().optional(),
+  qrImageUrl: z.string().optional(),
+  bankAccountName: z.string().optional(),
+  bankAccountNumber: z.string().optional(),
+  bankIfsc: z.string().optional(),
+  bankName: z.string().optional(),
+  bankBranch: z.string().optional(),
+  chequePayeeName: z.string().optional(),
+  instructions: z.string().optional(),
+});// Customer
 export const customerSchema = z.object({
   name: z.string().min(1, "Name required"),
   gstin: z
@@ -65,7 +82,6 @@ export const customerSchema = z.object({
   creditLimit: z.coerce.number().min(0).default(0),
   openingBalance: z.coerce.number().default(0),
 });
-
 // Customer address
 export const customerAddressSchema = z.object({
   label: z.string().optional(),
@@ -276,3 +292,7 @@ export const paymentSchema = z
       });
     }
   });
+
+
+
+

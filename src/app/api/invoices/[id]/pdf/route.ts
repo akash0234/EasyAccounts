@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
-import { companies, financialYears, invoices } from "@/db/schema";
+import { companies, companyPaymentSettings, financialYears, invoices } from "@/db/schema";
 import {
   getInvoicePdfFilename,
   renderInvoiceHtml,
@@ -39,7 +39,11 @@ export async function GET(
       vendor: true,
       customer: true,
       facility: true,
-      items: true,
+      items: {
+        with: {
+          product: true,
+        },
+      },
       additionalCharges: true,
     },
   });
@@ -48,9 +52,15 @@ export async function GET(
     return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
   }
 
-  const [company, fy] = await Promise.all([
+  const [company, defaultPaymentSetting, fy] = await Promise.all([
     db.query.companies.findFirst({
       where: eq(companies.id, session.user.companyId),
+    }),
+    db.query.companyPaymentSettings.findFirst({
+      where: and(
+        eq(companyPaymentSettings.companyId, session.user.companyId),
+        eq(companyPaymentSettings.isDefault, true)
+      ),
     }),
     db.query.financialYears.findFirst({
       where: eq(financialYears.id, invoice.financialYearId),
@@ -88,7 +98,9 @@ export async function GET(
 
   const items: TemplateItem[] = invoice.items.map((it) => ({
     description: it.description,
+    hsn: it.product?.hsn ?? null,
     quantity: it.quantity,
+    unit: it.product?.unit ?? null,
     rate: it.rate,
     amount: it.amount,
     gstPercent: it.gstPercent,
@@ -121,6 +133,7 @@ export async function GET(
       city: company.city,
       state: company.state,
       pincode: company.pincode,
+      defaultPaymentSetting,
     },
     party,
     facility: invoice.facility

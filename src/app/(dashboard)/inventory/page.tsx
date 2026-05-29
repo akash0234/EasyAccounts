@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X, Upload } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { FacilityStockModal, type InventoryStockProduct } from "@/components/inventory/facility-stock-modal";
 import { SearchSelect } from "@/components/ui/search-select";
 
@@ -60,20 +60,47 @@ const defaultForm = {
 export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterCategoryId, setFilterCategoryId] = useState("");
+  const [filterCategoryDisplay, setFilterCategoryDisplay] = useState("");
+  const [filterSubcategoryId, setFilterSubcategoryId] = useState("");
+  const [filterSubcategoryDisplay, setFilterSubcategoryDisplay] = useState("");
+  const [filterIsActive, setFilterIsActive] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<InventoryStockProduct | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({ ...defaultForm });
   const [subcategoryDisplay, setSubcategoryDisplay] = useState("");
   const [selectedCategoryName, setSelectedCategoryName] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function loadProducts() {
-    const res = await fetch("/api/products");
+  async function loadProducts(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (filterCategoryId) params.set("categoryId", filterCategoryId);
+    if (filterSubcategoryId) params.set("subcategoryId", filterSubcategoryId);
+    if (filterIsActive) params.set("isActive", filterIsActive);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const res = await fetch(`/api/products?${params}`);
     const data = await res.json();
-    if (Array.isArray(data)) setProducts(data);
+    if (data.data) {
+      setProducts(data.data);
+      setTotal(data.pagination?.total || 0);
+    } else if (Array.isArray(data)) {
+      setProducts(data);
+      setTotal(data.length);
+    }
+    setListLoading(false);
   }
 
   useEffect(() => {
@@ -86,6 +113,21 @@ export default function InventoryPage() {
     void init();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterCategoryId, filterSubcategoryId, filterIsActive, pageSize]);
+
+  useEffect(() => {
+    loadProducts(page);
+  }, [page, pageSize, debouncedSearch, filterCategoryId, filterSubcategoryId, filterIsActive]);
 
   function resetForm() {
     setFormData({ ...defaultForm });
@@ -147,12 +189,14 @@ export default function InventoryPage() {
     setShowForm(true);
   }
 
-  const filtered = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()) ||
-    (p.code && p.code.toLowerCase().includes(search.toLowerCase())) ||
-    (p.hsn && p.hsn.includes(search)) ||
-    (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()))
-  );
+  function resetFilters() {
+    setSearch("");
+    setFilterCategoryId("");
+    setFilterCategoryDisplay("");
+    setFilterSubcategoryId("");
+    setFilterSubcategoryDisplay("");
+    setFilterIsActive("");
+  }
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
   const isTrackedProduct = formData.trackingMode !== "NONE";
@@ -324,6 +368,60 @@ export default function InventoryPage() {
         <Input className="pl-9" placeholder="Search by name, code, HSN, or SKU..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div>
+              <Label className="mb-1 block text-xs uppercase tracking-[0.14em] text-slate-500">Category</Label>
+              <SearchSelect
+                value={filterCategoryId}
+                displayValue={filterCategoryDisplay}
+                endpoint="/api/products/categories"
+                placeholder="All categories"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => {
+                  setFilterCategoryId(opt?.id ?? "");
+                  setFilterCategoryDisplay(opt?.label ?? "");
+                  setFilterSubcategoryId("");
+                  setFilterSubcategoryDisplay("");
+                }}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs uppercase tracking-[0.14em] text-slate-500">Subcategory</Label>
+              <SearchSelect
+                value={filterSubcategoryId}
+                displayValue={filterSubcategoryDisplay}
+                endpoint="/api/products/subcategories"
+                placeholder="All subcategories"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => {
+                  setFilterSubcategoryId(opt?.id ?? "");
+                  setFilterSubcategoryDisplay(opt?.label ?? "");
+                }}
+              />
+            </div>
+            <div>
+              <Label className="mb-1 block text-xs uppercase tracking-[0.14em] text-slate-500">Status</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterIsActive}
+                onChange={(e) => setFilterIsActive(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <Button type="button" variant="outline" onClick={resetFilters} className="w-full">
+                Reset
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           <Table className="min-w-[70rem] table-fixed">
@@ -368,7 +466,7 @@ export default function InventoryPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((p) => (
+              {products.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="align-middle">
                     {p.imageUrl ? (
@@ -446,10 +544,10 @@ export default function InventoryPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {filtered.length === 0 && (
+              {products.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={9} className="py-6 text-center text-slate-400">
-                    No products found
+                    {listLoading ? "Loading..." : "No products found"}
                   </TableCell>
                 </TableRow>
               )}
@@ -457,6 +555,46 @@ export default function InventoryPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
       {selectedProduct && (
         <FacilityStockModal

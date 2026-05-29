@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, ArrowLeft } from "lucide-react";
+import { Search, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -39,12 +39,50 @@ export default function LedgerPage() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<LedgerAccount | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [listLoading, setListLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  async function loadAccounts(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const res = await fetch(`/api/ledger?${params}`);
+    const data = await res.json();
+    if (data.data) {
+      setAccounts(data.data);
+      setTotal(data.pagination?.total || 0);
+    } else if (Array.isArray(data)) {
+      setAccounts(data);
+      setTotal(data.length);
+    }
+    setListLoading(false);
+  }
 
   useEffect(() => {
-    fetch("/api/ledger").then((r) => r.json()).then((data) => {
-      if (Array.isArray(data)) setAccounts(data);
-    });
+    loadAccounts();
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, pageSize]);
+
+  useEffect(() => {
+    loadAccounts(page);
+  }, [page, pageSize, debouncedSearch]);
 
   async function viewAccount(account: LedgerAccount) {
     setSelectedAccount(account);
@@ -55,10 +93,6 @@ export default function LedgerPage() {
 
   const fmt = (n: number) => n.toLocaleString("en-IN", { style: "currency", currency: "INR" });
   const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-IN");
-
-  const filtered = accounts.filter((a) =>
-    a.name.toLowerCase().includes(search.toLowerCase()) || a.type.toLowerCase().includes(search.toLowerCase())
-  );
 
   if (selectedAccount) {
     return (
@@ -149,7 +183,7 @@ export default function LedgerPage() {
         <Input className="pl-9" placeholder="Search accounts..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((account) => (
+        {accounts.map((account) => (
           <Card key={account.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => viewAccount(account)}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -163,6 +197,48 @@ export default function LedgerPage() {
           </Card>
         ))}
       </div>
+
+      {accounts.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span>Rows per page</span>
+            <select
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || listLoading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-[var(--muted-foreground)]">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || listLoading}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

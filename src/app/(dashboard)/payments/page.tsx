@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Eye, Plus, X } from "lucide-react";
+import { Eye, Plus, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 
@@ -64,7 +64,20 @@ export default function PaymentsPage() {
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [tab, setTab] = useState<"RECEIVED" | "MADE">("RECEIVED");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+  const [filterMethod, setFilterMethod] = useState("");
+  const [filterPartyId, setFilterPartyId] = useState("");
+  const [minAmount, setMinAmount] = useState("");
+  const [maxAmount, setMaxAmount] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Form state
   const [paymentType, setPaymentType] = useState<"RECEIVED" | "MADE">("RECEIVED");
@@ -173,29 +186,58 @@ export default function PaymentsPage() {
     ? "Advance used cannot exceed the bill total."
     : null;
 
-  async function load() {
-    const [payRes, custRes, vendRes] = await Promise.all([
-      fetch(`/api/payments?type=${tab}`),
+  async function loadPayments(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams({
+      type: tab,
+      page: String(nextPage),
+      pageSize: String(pageSize),
+    });
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (filterFrom) params.set("from", filterFrom);
+    if (filterTo) params.set("to", filterTo);
+    if (filterMethod) params.set("method", filterMethod);
+    if (filterPartyId) {
+      params.set(tab === "RECEIVED" ? "customerId" : "vendorId", filterPartyId);
+    }
+    if (minAmount) params.set("minAmount", minAmount);
+    if (maxAmount) params.set("maxAmount", maxAmount);
+
+    const payRes = await fetch(`/api/payments?${params.toString()}`);
+    const payData = await payRes.json();
+    if (Array.isArray(payData)) {
+      setPayments(payData);
+      setTotal(payData.length);
+    } else {
+      setPayments(payData.data ?? []);
+      setTotal(payData.pagination?.total ?? 0);
+    }
+    setListLoading(false);
+  }
+
+  async function loadReferenceData() {
+    const [custRes, vendRes] = await Promise.all([
       fetch("/api/customers"),
       fetch("/api/vendors"),
     ]);
-    const [payData, custData, vendData] = await Promise.all([payRes.json(), custRes.json(), vendRes.json()]);
-    if (Array.isArray(payData)) setPayments(payData);
+    const [custData, vendData] = await Promise.all([custRes.json(), vendRes.json()]);
     if (Array.isArray(custData)) setCustomers(custData);
     if (Array.isArray(vendData)) setVendors(vendData);
+  }
+
+  async function load() {
+    await Promise.all([loadPayments(), loadReferenceData()]);
   }
 
   useEffect(() => {
     let cancelled = false;
 
     async function initializePayments() {
-      const [payRes, custRes, vendRes] = await Promise.all([
-        fetch(`/api/payments?type=${tab}`),
+      const [custRes, vendRes] = await Promise.all([
         fetch("/api/customers"),
         fetch("/api/vendors"),
       ]);
-      const [payData, custData, vendData] = await Promise.all([
-        payRes.json(),
+      const [custData, vendData] = await Promise.all([
         custRes.json(),
         vendRes.json(),
       ]);
@@ -203,7 +245,6 @@ export default function PaymentsPage() {
       if (cancelled) {
         return;
       }
-      if (Array.isArray(payData)) setPayments(payData);
       if (Array.isArray(custData)) setCustomers(custData);
       if (Array.isArray(vendData)) setVendors(vendData);
     }
@@ -213,7 +254,26 @@ export default function PaymentsPage() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+    setFilterPartyId("");
   }, [tab]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterFrom, filterTo, filterMethod, filterPartyId, minAmount, maxAmount, pageSize]);
+
+  useEffect(() => {
+    void loadPayments(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, page, pageSize, debouncedSearch, filterFrom, filterTo, filterMethod, filterPartyId, minAmount, maxAmount]);
 
   async function loadUnpaidInvoices(partyId: string, invoiceType: "SALES" | "PURCHASE") {
     const payType = invoiceType === "SALES" ? "RECEIVED" : "MADE";
@@ -681,6 +741,88 @@ export default function PaymentsPage() {
         </Card>
       )}
 
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-8">
+            <div className="xl:col-span-2">
+              <Label>Search</Label>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Payment #, party, GSTIN, phone, reference"
+              />
+            </div>
+            <div>
+              <Label>From</Label>
+              <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>To</Label>
+              <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+            </div>
+            <div>
+              <Label>Method</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterMethod}
+                onChange={(e) => setFilterMethod(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="CASH">Cash</option>
+                <option value="BANK">Bank</option>
+                <option value="UPI">UPI</option>
+                <option value="CHEQUE">Cheque</option>
+              </select>
+            </div>
+            <div>
+              <Label>{tab === "RECEIVED" ? "Customer" : "Vendor"}</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterPartyId}
+                onChange={(e) => setFilterPartyId(e.target.value)}
+              >
+                <option value="">All</option>
+                {(tab === "RECEIVED" ? customers : vendors).map((party) => (
+                  <option key={party.id} value={party.id}>
+                    {party.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Min amount</Label>
+              <Input type="number" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} />
+            </div>
+            <div>
+              <Label>Max amount</Label>
+              <Input type="number" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} />
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                setDebouncedSearch("");
+                setFilterFrom("");
+                setFilterTo("");
+                setFilterMethod("");
+                setFilterPartyId("");
+                setMinAmount("");
+                setMaxAmount("");
+                setPage(1);
+              }}
+            >
+              Reset filters
+            </Button>
+            <div className="text-sm text-[var(--muted-foreground)]">
+              {listLoading ? "Loading…" : `Showing ${payments.length === 0 ? 0 : (page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           <Table className="min-w-full table-fixed">
@@ -748,6 +890,46 @@ export default function PaymentsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
       {viewInvoice && (
         <InvoiceDetailModal invoice={viewInvoice} onClose={() => setViewInvoice(null)} />

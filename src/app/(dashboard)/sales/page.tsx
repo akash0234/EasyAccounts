@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye, MapPin, Receipt } from "lucide-react";
+import { Plus, X, Trash2, Eye, MapPin, Receipt, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   AddressPickerModal,
@@ -134,39 +134,78 @@ export default function SalesPage() {
   const [batchDraftByRow, setBatchDraftByRow] = useState<
     Record<number, { batchNo: string; quantity: string }>
   >({});
+  const [listLoading, setListLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterFrom, setFilterFrom] = useState("");
+  const [filterTo, setFilterTo] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [filterCustomerId, setFilterCustomerId] = useState("");
+  const [filterCustomerDisplay, setFilterCustomerDisplay] = useState("");
+  const [filterFacilityId, setFilterFacilityId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const selectedCustomer = customers.find((c) => c.id === customerId) ?? null;
 
-  async function load() {
-    const [invRes, custRes, prodRes, facRes] = await Promise.all([
-      fetch("/api/invoices?type=SALES"),
+  async function loadInvoices(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams({
+      type: "SALES",
+      page: String(nextPage),
+      pageSize: String(pageSize),
+    });
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (filterFrom) params.set("from", filterFrom);
+    if (filterTo) params.set("to", filterTo);
+    if (filterStatus) params.set("status", filterStatus);
+    if (filterCustomerId) params.set("customerId", filterCustomerId);
+    if (filterFacilityId) params.set("facilityId", filterFacilityId);
+
+    const invRes = await fetch(`/api/invoices?${params.toString()}`);
+    const invData = await invRes.json();
+    if (Array.isArray(invData)) {
+      setInvoices(invData);
+      setTotal(invData.length);
+    } else {
+      setInvoices(invData.data ?? []);
+      setTotal(invData.pagination?.total ?? 0);
+    }
+    setListLoading(false);
+  }
+
+  async function loadReferenceData() {
+    const [custRes, prodRes, facRes] = await Promise.all([
       fetch("/api/customers"),
       fetch("/api/products"),
       fetch("/api/facilities"),
     ]);
-    const [invData, custData, prodData, facData] = await Promise.all([invRes.json(), custRes.json(), prodRes.json(), facRes.json()]);
-    if (Array.isArray(invData)) setInvoices(invData);
+    const [custData, prodData, facData] = await Promise.all([custRes.json(), prodRes.json(), facRes.json()]);
     if (Array.isArray(custData)) setCustomers(custData);
     if (Array.isArray(prodData)) setProductsList(prodData);
     if (Array.isArray(facData)) setFacilitiesList(facData);
+  }
+
+  async function load() {
+    await Promise.all([loadInvoices(), loadReferenceData()]);
   }
 
   useEffect(() => {
     let cancelled = false;
 
     async function initializeSales() {
-      const [invRes, custRes, prodRes, facRes] = await Promise.all([
-        fetch("/api/invoices?type=SALES"),
+      const [custRes, prodRes, facRes] = await Promise.all([
         fetch("/api/customers"),
         fetch("/api/products"),
         fetch("/api/facilities"),
       ]);
-      const [invData, custData, prodData, facData] = await Promise.all([invRes.json(), custRes.json(), prodRes.json(), facRes.json()]);
+      const [custData, prodData, facData] = await Promise.all([custRes.json(), prodRes.json(), facRes.json()]);
 
       if (cancelled) {
         return;
       }
-      if (Array.isArray(invData)) setInvoices(invData);
       if (Array.isArray(custData)) setCustomers(custData);
       if (Array.isArray(prodData)) setProductsList(prodData);
       if (Array.isArray(facData)) setFacilitiesList(facData);
@@ -178,6 +217,20 @@ export default function SalesPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search.trim()), 400);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterFrom, filterTo, filterStatus, filterCustomerId, filterFacilityId, pageSize]);
+
+  useEffect(() => {
+    void loadInvoices(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, debouncedSearch, filterFrom, filterTo, filterStatus, filterCustomerId, filterFacilityId]);
 
   function handleCustomerChange(nextCustomerId: string) {
     setCustomerId(nextCustomerId);
@@ -376,6 +429,27 @@ export default function SalesPage() {
     }
 
     return `${formatDecimal(availability.currentStock)} ${availability.unit}`;
+  }
+
+  async function downloadPdf(invoiceId: string, invoiceNumber: string) {
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/pdf`);
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(msg || `Failed to generate PDF (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sales-invoice-${invoiceNumber}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to download PDF");
+    }
   }
 
   function addSuggestedSerial(idx: number, serialNo: string) {
@@ -1107,6 +1181,97 @@ export default function SalesPage() {
         </Card>
       )}
 
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <div className="xl:col-span-2">
+              <Label>Search</Label>
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Invoice #, customer, GSTIN, phone"
+              />
+            </div>
+            <div>
+              <Label>From</Label>
+              <Input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>To</Label>
+              <Input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+            </div>
+            <div>
+              <Label>Status</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="UNPAID">Unpaid</option>
+                <option value="PARTIAL">Partial</option>
+                <option value="PAID">Paid</option>
+              </select>
+            </div>
+            <div>
+              <Label>Customer</Label>
+              <SearchSelect
+                value={filterCustomerId}
+                displayValue={filterCustomerDisplay}
+                endpoint="/api/customers"
+                placeholder="All customers"
+                mapResult={(r: { id: string; name: string; gstin?: string | null }) => ({
+                  id: r.id,
+                  label: r.name,
+                  hint: r.gstin ?? undefined,
+                })}
+                onChange={(opt) => {
+                  setFilterCustomerId(opt?.id ?? "");
+                  setFilterCustomerDisplay(opt?.label ?? "");
+                }}
+              />
+            </div>
+            <div>
+              <Label>Facility</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                value={filterFacilityId}
+                onChange={(e) => setFilterFacilityId(e.target.value)}
+              >
+                <option value="">All facilities</option>
+                {facilitiesList.map((facility) => (
+                  <option key={facility.id} value={facility.id}>
+                    {facility.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSearch("");
+                setDebouncedSearch("");
+                setFilterFrom("");
+                setFilterTo("");
+                setFilterStatus("");
+                setFilterCustomerId("");
+                setFilterCustomerDisplay("");
+                setFilterFacilityId("");
+                setPage(1);
+              }}
+            >
+              Reset filters
+            </Button>
+            <div className="text-sm text-[var(--muted-foreground)]">
+              {listLoading ? "Loading…" : `Showing ${invoices.length === 0 ? 0 : (page - 1) * pageSize + 1}-${Math.min(page * pageSize, total)} of ${total}`}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           <Table className="min-w-full table-fixed">
@@ -1138,8 +1303,8 @@ export default function SalesPage() {
                 <TableHeader className="bg-rubick-primary !text-center text-white">
                   Status
                 </TableHeader>
-                <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white w-[5rem]">
-                  View
+                <TableHeader className="rounded-r-md bg-rubick-primary text-center text-white w-[6rem]">
+                  Actions
                 </TableHeader>
               </TableRow>
             </TableHead>
@@ -1175,9 +1340,24 @@ export default function SalesPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="align-middle text-center">
-                    <Button variant="ghost" size="icon" onClick={() => setViewInvoice(inv)}>
-                      <Eye className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="View"
+                        onClick={() => setViewInvoice(inv)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Download PDF"
+                        onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -1192,6 +1372,46 @@ export default function SalesPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
       {/* Invoice Detail Popup */}
       {viewInvoice && (
@@ -1209,6 +1429,14 @@ export default function SalesPage() {
                 <Badge variant={viewInvoice.status === "PAID" ? "paid" : viewInvoice.status === "PARTIAL" ? "partial" : "unpaid"}>
                   {viewInvoice.status}
                 </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadPdf(viewInvoice.id, viewInvoice.invoiceNumber)}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Download PDF
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => setViewInvoice(null)}><X className="h-4 w-4" /></Button>
               </div>
             </div>

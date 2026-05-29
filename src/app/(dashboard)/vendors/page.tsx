@@ -13,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, X, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Vendor {
   id: string;
@@ -30,18 +30,37 @@ interface Vendor {
 export default function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "", gstin: "", phone: "", email: "",
     address: "", city: "", state: "", pincode: "", openingBalance: 0,
   });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
-  async function loadVendors() {
-    const res = await fetch("/api/vendors");
+  async function loadVendors(nextPage = page) {
+    setListLoading(true);
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const res = await fetch(`/api/vendors?${params}`);
     const data = await res.json();
-    if (Array.isArray(data)) setVendors(data);
+    if (data.data) {
+      setVendors(data.data);
+      setTotal(data.pagination?.total || 0);
+    } else if (Array.isArray(data)) {
+      setVendors(data);
+      setTotal(data.length);
+    }
+    setListLoading(false);
   }
 
   useEffect(() => {
@@ -61,6 +80,21 @@ export default function VendorsPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, pageSize]);
+
+  useEffect(() => {
+    loadVendors(page);
+  }, [page, pageSize, debouncedSearch]);
 
   function resetForm() {
     setFormData({ name: "", gstin: "", phone: "", email: "", address: "", city: "", state: "", pincode: "", openingBalance: 0 });
@@ -92,12 +126,6 @@ export default function VendorsPage() {
     setEditingId(v.id);
     setShowForm(true);
   }
-
-  const filtered = vendors.filter((v) =>
-    v.name.toLowerCase().includes(search.toLowerCase()) ||
-    (v.phone && v.phone.includes(search)) ||
-    (v.gstin && v.gstin.includes(search.toUpperCase()))
-  );
 
   return (
     <div>
@@ -133,7 +161,7 @@ export default function VendorsPage() {
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input className="pl-9" placeholder="Search by name, phone or GSTIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input className="pl-9" placeholder="Search by name, phone, or GSTIN..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       <Card>
@@ -174,7 +202,7 @@ export default function VendorsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((v) => (
+              {vendors.map((v) => (
                 <TableRow key={v.id}>
                   <TableCell className="whitespace-nowrap align-middle font-mono text-xs text-slate-500">
                     {v.code || "-"}
@@ -217,10 +245,10 @@ export default function VendorsPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {filtered.length === 0 && (
+              {vendors.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-6 text-center text-slate-400">
-                    No vendors found
+                    {listLoading ? "Loading..." : "No vendors found"}
                   </TableCell>
                 </TableRow>
               )}
@@ -228,6 +256,46 @@ export default function VendorsPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <span>Rows per page</span>
+          <select
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+          >
+            {[10, 25, 50, 100].map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page <= 1 || listLoading}
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages || listLoading}
+            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

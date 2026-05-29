@@ -25,12 +25,36 @@ interface OrganizationCompanyMember {
   role: string;
 }
 
+type PaymentMethod = "CASH" | "BANK" | "UPI" | "CHEQUE";
+
+interface CompanyPaymentSetting {
+  id: string;
+  type: PaymentMethod;
+  label: string;
+  isDefault: boolean;
+  upiId: string | null;
+  upiPayeeName: string | null;
+  qrImageUrl: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
+  bankName: string | null;
+  bankBranch: string | null;
+  chequePayeeName: string | null;
+  instructions: string | null;
+}
 interface OrganizationCompany {
   id: string;
   name: string;
   gstin: string | null;
+  pan: string | null;
   email: string | null;
   phone: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  paymentSettings: CompanyPaymentSetting[];
   members: OrganizationCompanyMember[];
 }
 
@@ -54,6 +78,37 @@ export default function SettingsPage() {
   const [userSuccess, setUserSuccess] = useState("");
   const [companyLoading, setCompanyLoading] = useState(false);
   const [userLoading, setUserLoading] = useState(false);
+  const [activeCompanySaving, setActiveCompanySaving] = useState(false);
+  const [activeCompanyError, setActiveCompanyError] = useState("");
+  const [activeCompanySuccess, setActiveCompanySuccess] = useState("");
+  const [activeCompanyForm, setActiveCompanyForm] = useState({
+    name: "",
+    gstin: "",
+    pan: "",
+    phone: "",
+    email: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
+  });
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentEditingId, setPaymentEditingId] = useState<string | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    type: "UPI" as PaymentMethod,
+    label: "",
+    isDefault: false,
+    upiId: "",
+    upiPayeeName: "",
+    qrImageUrl: "",
+    bankAccountName: "",
+    bankAccountNumber: "",
+    bankIfsc: "",
+    bankName: "",
+    bankBranch: "",
+    chequePayeeName: "",
+    instructions: "",
+  });
 
   const canManageOrganization =
     session?.user.organizationRole === "OWNER" ||
@@ -93,6 +148,27 @@ export default function SettingsPage() {
       }
     );
   }, []);
+
+  const activeCompany =
+    organizationData?.companies.find((company) => company.id === session?.user.companyId) ??
+    null;
+
+  useEffect(() => {
+    if (!activeCompany) return;
+    queueMicrotask(() => {
+      setActiveCompanyForm({
+        name: activeCompany.name ?? "",
+        gstin: activeCompany.gstin ?? "",
+        pan: activeCompany.pan ?? "",
+        phone: activeCompany.phone ?? "",
+        email: activeCompany.email ?? "",
+        address: activeCompany.address ?? "",
+        city: activeCompany.city ?? "",
+        state: activeCompany.state ?? "",
+        pincode: activeCompany.pincode ?? "",
+      });
+    });
+  }, [activeCompany]);
 
   async function handleCompanyCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,6 +236,123 @@ export default function SettingsPage() {
   async function switchCompany(companyId: string) {
     await update({ activeCompanyId: companyId });
     router.refresh();
+    await loadData();
+  }
+
+  async function saveActiveCompanySettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActiveCompanySaving(true);
+    setActiveCompanyError("");
+    setActiveCompanySuccess("");
+
+    const response = await fetch("/api/organization/company", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(activeCompanyForm),
+    });
+    const data = await response.json();
+    setActiveCompanySaving(false);
+
+    if (!response.ok) {
+      setActiveCompanyError(data.error || "Unable to update company settings");
+      return;
+    }
+
+    setActiveCompanySuccess("Company invoice settings updated");
+    await loadData();
+  }
+
+  function resetPaymentForm() {
+    setPaymentEditingId(null);
+    setPaymentForm({
+      type: "UPI",
+      label: "",
+      isDefault: false,
+      upiId: "",
+      upiPayeeName: "",
+      qrImageUrl: "",
+      bankAccountName: "",
+      bankAccountNumber: "",
+      bankIfsc: "",
+      bankName: "",
+      bankBranch: "",
+      chequePayeeName: "",
+      instructions: "",
+    });
+  }
+
+  function editPaymentSetting(paymentSetting: CompanyPaymentSetting) {
+    setPaymentEditingId(paymentSetting.id);
+    setPaymentForm({
+      type: paymentSetting.type,
+      label: paymentSetting.label,
+      isDefault: paymentSetting.isDefault,
+      upiId: paymentSetting.upiId ?? "",
+      upiPayeeName: paymentSetting.upiPayeeName ?? "",
+      qrImageUrl: paymentSetting.qrImageUrl ?? "",
+      bankAccountName: paymentSetting.bankAccountName ?? "",
+      bankAccountNumber: paymentSetting.bankAccountNumber ?? "",
+      bankIfsc: paymentSetting.bankIfsc ?? "",
+      bankName: paymentSetting.bankName ?? "",
+      bankBranch: paymentSetting.bankBranch ?? "",
+      chequePayeeName: paymentSetting.chequePayeeName ?? "",
+      instructions: paymentSetting.instructions ?? "",
+    });
+  }
+
+  async function handleQrUpload(file: File | null) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPaymentForm((current) => ({ ...current, qrImageUrl: String(reader.result ?? "") }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function savePaymentSetting(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPaymentSaving(true);
+    setActiveCompanyError("");
+    setActiveCompanySuccess("");
+
+    const response = await fetch(
+      paymentEditingId
+        ? `/api/organization/payment-settings/${paymentEditingId}`
+        : "/api/organization/payment-settings",
+      {
+        method: paymentEditingId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(paymentForm),
+      }
+    );
+    const data = await response.json();
+    setPaymentSaving(false);
+
+    if (!response.ok) {
+      setActiveCompanyError(data.error || "Unable to save payment setting");
+      return;
+    }
+
+    setActiveCompanySuccess("Payment setting saved");
+    resetPaymentForm();
+    await loadData();
+  }
+
+  async function deletePaymentSetting(id: string) {
+    setActiveCompanyError("");
+    setActiveCompanySuccess("");
+    const response = await fetch(`/api/organization/payment-settings/${id}`, {
+      method: "DELETE",
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setActiveCompanyError(data.error || "Unable to delete payment setting");
+      return;
+    }
+
+    setActiveCompanySuccess("Payment setting deleted");
+    if (paymentEditingId === id) resetPaymentForm();
     await loadData();
   }
 
@@ -279,6 +472,185 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {activeCompany && session?.user.companyRole === "ADMIN" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Active Company Invoice Settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-5" onSubmit={saveActiveCompanySettings}>
+              {activeCompanyError && (
+                <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
+                  {activeCompanyError}
+                </div>
+              )}
+              {activeCompanySuccess && (
+                <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
+                  {activeCompanySuccess}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label>Company Name</Label>
+                  <Input value={activeCompanyForm.name} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, name: e.target.value })} required />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>GSTIN</Label>
+                  <Input value={activeCompanyForm.gstin} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, gstin: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PAN</Label>
+                  <Input value={activeCompanyForm.pan} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pan: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Phone</Label>
+                  <Input value={activeCompanyForm.phone} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, phone: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input type="email" value={activeCompanyForm.email} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, email: e.target.value })} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>Address</Label>
+                  <Input value={activeCompanyForm.address} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, address: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>City</Label>
+                  <Input value={activeCompanyForm.city} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, city: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>State</Label>
+                  <Input value={activeCompanyForm.state} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, state: e.target.value })} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Pincode</Label>
+                  <Input value={activeCompanyForm.pincode} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pincode: e.target.value })} />
+                </div>
+              </div>
+
+              <Button type="submit" disabled={activeCompanySaving}>
+                {activeCompanySaving ? "Saving..." : "Save Invoice Settings"}
+              </Button>
+            </form>
+
+            <div className="mt-6 space-y-4 rounded-xl border p-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Multiple Payment Settings</p>
+                <p className="text-xs text-slate-500">
+                  Add multiple UPI IDs, uploaded QR scanners, bank accounts, cheque, or cash options. Only the default setting prints on sales invoices.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {(activeCompany.paymentSettings ?? []).map((paymentSetting) => (
+                  <div key={paymentSetting.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+                    <div>
+                      <div className="font-medium text-slate-800">
+                        {paymentSetting.label}{" "}
+                        <Badge variant={paymentSetting.isDefault ? "paid" : "secondary"}>
+                          {paymentSetting.isDefault ? "Default" : paymentSetting.type}
+                        </Badge>
+                      </div>
+                      <div className="text-slate-500">
+                        {paymentSetting.type === "UPI" && (paymentSetting.upiId || "UPI")}
+                        {paymentSetting.type === "BANK" && (paymentSetting.bankName || paymentSetting.bankAccountNumber || "Bank")}
+                        {paymentSetting.type === "CHEQUE" && (paymentSetting.chequePayeeName || "Cheque")}
+                        {paymentSetting.type === "CASH" && "Cash"}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" onClick={() => editPaymentSetting(paymentSetting)}>
+                        Edit
+                      </Button>
+                      <Button type="button" variant="outline" onClick={() => deletePaymentSetting(paymentSetting.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <form className="space-y-4" onSubmit={savePaymentSetting}>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label>Type</Label>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                      value={paymentForm.type}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, type: e.target.value as PaymentMethod })}
+                    >
+                      <option value="UPI">UPI</option>
+                      <option value="BANK">Bank Transfer</option>
+                      <option value="CHEQUE">Cheque</option>
+                      <option value="CASH">Cash</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Label</Label>
+                    <Input value={paymentForm.label} onChange={(e) => setPaymentForm({ ...paymentForm, label: e.target.value })} placeholder="Primary UPI / SBI Current" required />
+                  </div>
+                  <label className="flex items-center gap-2 pt-7 text-sm">
+                    <input type="checkbox" checked={paymentForm.isDefault} onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })} />
+                    Show by default on sales invoices
+                  </label>
+                </div>
+
+                {paymentForm.type === "UPI" && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="space-y-1.5">
+                      <Label>UPI ID</Label>
+                      <Input value={paymentForm.upiId} onChange={(e) => setPaymentForm({ ...paymentForm, upiId: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>UPI Payee Name</Label>
+                      <Input value={paymentForm.upiPayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, upiPayeeName: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Upload Scanner QR</Label>
+                      <Input type="file" accept="image/*" onChange={(e) => handleQrUpload(e.target.files?.[0] ?? null)} />
+                    </div>
+                  </div>
+                )}
+
+                {paymentForm.type === "BANK" && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <Input value={paymentForm.bankAccountName} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountName: e.target.value })} placeholder="Account name" />
+                    <Input value={paymentForm.bankAccountNumber} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountNumber: e.target.value })} placeholder="Account number" />
+                    <Input value={paymentForm.bankIfsc} onChange={(e) => setPaymentForm({ ...paymentForm, bankIfsc: e.target.value })} placeholder="IFSC" />
+                    <Input value={paymentForm.bankName} onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })} placeholder="Bank name" />
+                    <Input value={paymentForm.bankBranch} onChange={(e) => setPaymentForm({ ...paymentForm, bankBranch: e.target.value })} placeholder="Branch" />
+                  </div>
+                )}
+
+                {paymentForm.type === "CHEQUE" && (
+                  <Input value={paymentForm.chequePayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, chequePayeeName: e.target.value })} placeholder="Cheque in favour of" />
+                )}
+
+                <textarea
+                  value={paymentForm.instructions}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, instructions: e.target.value })}
+                  placeholder="Optional instructions for this payment setting"
+                  rows={2}
+                  className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                />
+
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={paymentSaving}>
+                    {paymentSaving ? "Saving..." : paymentEditingId ? "Update Payment Setting" : "Add Payment Setting"}
+                  </Button>
+                  {paymentEditingId && (
+                    <Button type="button" variant="outline" onClick={resetPaymentForm}>
+                      Cancel Edit
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {canManageOrganization && (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Card>
@@ -390,3 +762,6 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+
+

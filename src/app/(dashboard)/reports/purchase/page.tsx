@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { Download, Filter, RotateCcw } from "lucide-react";
+import { Download, Filter, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -91,6 +91,10 @@ export default function PurchaseReportPage() {
   const [aggregation, setAggregation] = useState<Aggregation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const paginatedRows = rows.slice((page - 1) * pageSize, page * pageSize);
 
   useEffect(() => {
     runReport();
@@ -155,7 +159,12 @@ export default function PurchaseReportPage() {
     setMinAmount("");
     setMaxAmount("");
     setGroupBy("");
+    setPage(1);
   }
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length]);
 
   function exportCsv() {
     toCSV(
@@ -390,7 +399,7 @@ export default function PurchaseReportPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((r) => (
+                  paginatedRows.map((r) => (
                     <TableRow key={r.id}>
                       <TableCell className="whitespace-nowrap align-middle">{formatDate(r.date)}</TableCell>
                       <TableCell className="align-middle font-medium">{r.invoiceNumber}</TableCell>
@@ -426,6 +435,48 @@ export default function PurchaseReportPage() {
             </Table>
           </CardContent>
         </Card>
+      )}
+
+      {rows.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span>Rows per page</span>
+            <select
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              {[10, 25, 50, 100].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-[var(--muted-foreground)]">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       )}
     </ReportShell>
   );

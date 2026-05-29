@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { categories, products } from "@/db/schema";
 import { auth } from "@/lib/auth";
-import { eq, and, ilike, sql } from "drizzle-orm";
+import { eq, and, ilike, sql, type SQL } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -12,17 +12,27 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") || "").trim();
-  const limitParam = url.searchParams.get("limit");
-  const limit = limitParam ? Math.min(Number(limitParam) || 50, 200) : undefined;
+  const isActive = url.searchParams.get("isActive");
+  const pageParam = Number(url.searchParams.get("page") || "0");
+  const pageSizeParam = Number(url.searchParams.get("pageSize") || "25");
+  const wantsPagination = url.searchParams.has("page") || url.searchParams.has("pageSize");
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const pageSize =
+    Number.isFinite(pageSizeParam) && pageSizeParam > 0
+      ? Math.min(Math.floor(pageSizeParam), 100)
+      : 25;
 
-  const whereClauses = [eq(categories.companyId, session.user.companyId)];
+  const whereClauses: SQL[] = [eq(categories.companyId, session.user.companyId)];
   if (q) whereClauses.push(ilike(categories.name, `%${q}%`));
+  if (isActive !== null && isActive !== undefined && isActive !== "") {
+    whereClauses.push(eq(categories.isActive, isActive === "true"));
+  }
 
   const cats = await db.query.categories.findMany({
     where: and(...whereClauses),
     with: { subcategories: true },
     orderBy: (c, { asc }) => [asc(c.name)],
-    limit,
+    ...(wantsPagination ? { limit: pageSize, offset: (page - 1) * pageSize } : {}),
   });
 
   // Count products per category and subcategory
@@ -55,6 +65,23 @@ export async function GET(req: NextRequest) {
       productCount: subCountMap[sub.id] || 0,
     })),
   }));
+
+  if (wantsPagination) {
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(categories)
+      .where(and(...whereClauses));
+    const total = Number(totalResult[0]?.count ?? 0);
+    return NextResponse.json({
+      data: result,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    });
+  }
 
   return NextResponse.json(result);
 }

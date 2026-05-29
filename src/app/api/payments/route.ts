@@ -7,12 +7,14 @@ import {
   ledgerAccounts,
   ledgerEntries,
   financialYears,
+  customers,
+  vendors,
 } from "@/db/schema";
 import { paymentSchema } from "@/lib/validations";
 import { generateCode } from "@/lib/code-generator";
 import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -21,15 +23,118 @@ export async function GET(req: NextRequest) {
   }
 
   const type = req.nextUrl.searchParams.get("type") || "RECEIVED";
+  const q = req.nextUrl.searchParams.get("q")?.trim();
+  const method = req.nextUrl.searchParams.get("method");
+  const from = req.nextUrl.searchParams.get("from");
+  const to = req.nextUrl.searchParams.get("to");
+  const customerId = req.nextUrl.searchParams.get("customerId");
+  const vendorId = req.nextUrl.searchParams.get("vendorId");
+  const minAmount = Number(req.nextUrl.searchParams.get("minAmount") || "");
+  const maxAmount = Number(req.nextUrl.searchParams.get("maxAmount") || "");
+  const pageParam = Number(req.nextUrl.searchParams.get("page") || "0");
+  const pageSizeParam = Number(req.nextUrl.searchParams.get("pageSize") || "25");
+  const wantsPagination = req.nextUrl.searchParams.has("page") || req.nextUrl.searchParams.has("pageSize");
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+  const pageSize =
+    Number.isFinite(pageSizeParam) && pageSizeParam > 0
+      ? Math.min(Math.floor(pageSizeParam), 100)
+      : 25;
+
+  const conditions: SQL[] = [
+    eq(payments.companyId, session.user.companyId),
+    eq(payments.type, type as "RECEIVED" | "MADE"),
+  ];
+
+  if (method) {
+    conditions.push(eq(payments.method, method as "CASH" | "BANK" | "UPI" | "CHEQUE"));
+  }
+
+  if (from) {
+    conditions.push(gte(payments.date, new Date(from)));
+  }
+
+  if (to) {
+    const end = new Date(to);
+    end.setHours(23, 59, 59, 999);
+    conditions.push(lte(payments.date, end));
+  }
+
+  if (customerId) {
+    conditions.push(eq(payments.customerId, customerId));
+  }
+
+  if (vendorId) {
+    conditions.push(eq(payments.vendorId, vendorId));
+  }
+
+  if (Number.isFinite(minAmount)) {
+    conditions.push(gte(payments.amount, minAmount));
+  }
+
+  if (Number.isFinite(maxAmount)) {
+    conditions.push(lte(payments.amount, maxAmount));
+  }
+
+  if (q) {
+    const like = `%${q}%`;
+    const partyMatches =
+      type === "MADE"
+        ? await db
+            .select({ id: vendors.id })
+            .from(vendors)
+            .where(
+              and(
+                eq(vendors.companyId, session.user.companyId),
+                or(ilike(vendors.name, like), ilike(vendors.gstin, like), ilike(vendors.phone, like))
+              )
+            )
+        : await db
+            .select({ id: customers.id })
+            .from(customers)
+            .where(
+              and(
+                eq(customers.companyId, session.user.companyId),
+                or(ilike(customers.name, like), ilike(customers.gstin, like), ilike(customers.phone, like))
+              )
+            );
+    const partyIds = partyMatches.map((row) => row.id);
+    conditions.push(
+      or(
+        ilike(payments.paymentNumber, like),
+        ilike(payments.reference, like),
+        partyIds.length > 0
+          ? type === "MADE"
+            ? inArray(payments.vendorId, partyIds)
+            : inArray(payments.customerId, partyIds)
+          : sql`false`
+      )!
+    );
+  }
 
   const data = await db.query.payments.findMany({
-    where: and(
-      eq(payments.companyId, session.user.companyId),
-      eq(payments.type, type as "RECEIVED" | "MADE")
-    ),
+    where: and(...conditions),
     with: { customer: true, vendor: true, allocations: true },
     orderBy: (p, { desc }) => [desc(p.date)],
+    ...(wantsPagination ? { limit: pageSize, offset: (page - 1) * pageSize } : {}),
   });
+
+  if (wantsPagination) {
+    const totalResult = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(payments)
+      .where(and(...conditions));
+    const total = Number(totalResult[0]?.count ?? 0);
+
+    return NextResponse.json({
+      data,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
+    });
+  }
 
   return NextResponse.json(data);
 }
