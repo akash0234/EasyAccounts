@@ -37,7 +37,7 @@ export function AppearanceSwitcher() {
   const layoutMode = useLayoutModeStore();
 
   return (
-    <div className="fixed bottom-5 right-5 z-[70] hidden xl:block">
+    <div className="appearance-switcher fixed bottom-5 right-5 z-[70] hidden xl:block">
       <div className="relative">
         {open && (
           <div className="absolute bottom-18 right-0 flex w-[320px] flex-col gap-3">

@@ -33,7 +33,17 @@ export async function GET(req: NextRequest) {
       ),
       orderBy: (e, { asc }) => [asc(e.date), asc(e.createdAt)],
     });
-    return NextResponse.json(entries);
+    // Normalize balanceAfter sign: credit -> positive, debit -> negative
+    const normalized = entries.map((e) => ({
+      ...e,
+      balanceAfter:
+        (e.credit && e.credit > 0)
+          ? Math.abs(Number(e.balanceAfter))
+          : (e.debit && e.debit > 0)
+            ? -Math.abs(Number(e.balanceAfter))
+            : Number(e.balanceAfter),
+    }));
+    return NextResponse.json(normalized);
   }
 
   // Return all ledger accounts with balances
@@ -54,6 +64,11 @@ export async function GET(req: NextRequest) {
     ...(wantsPagination ? { limit: pageSize, offset: (page - 1) * pageSize } : {}),
   });
 
+  const normalizedAccounts = accounts.map((a) => ({
+    ...a,
+    balance: a.type === "CUSTOMER" ? Math.abs(Number(a.balance)) : Number(a.balance),
+  }));
+
   if (wantsPagination) {
     const totalResult = await db
       .select({ count: sql<number>`count(*)` })
@@ -61,7 +76,7 @@ export async function GET(req: NextRequest) {
       .where(and(...whereClauses));
     const total = Number(totalResult[0]?.count ?? 0);
     return NextResponse.json({
-      data: accounts,
+      data: normalizedAccounts,
       pagination: {
         page,
         pageSize,
@@ -71,5 +86,5 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json(accounts);
+  return NextResponse.json(normalizedAccounts);
 }

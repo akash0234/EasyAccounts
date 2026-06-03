@@ -4,7 +4,9 @@ import { Fragment, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { SimpleSelect } from "@/components/ui/simple-select";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -14,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight, ChevronLeft, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, ChevronDown, ChevronRight, ChevronLeft } from "lucide-react";
 
 interface Subcategory {
   id: string;
@@ -60,22 +62,32 @@ export default function CategoriesPage() {
 
   async function fetchCategories(nextPage = page) {
     setListLoading(true);
-    const params = new URLSearchParams();
-    if (debouncedSearch) params.set("q", debouncedSearch);
-    if (filterIsActive) params.set("isActive", filterIsActive);
-    params.set("page", String(nextPage));
-    params.set("pageSize", String(pageSize));
+    try {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (filterIsActive) params.set("isActive", filterIsActive);
+      params.set("page", String(nextPage));
+      params.set("pageSize", String(pageSize));
 
-    const res = await fetch(`/api/products/categories?${params}`);
-    const data = await res.json();
-    if (data.data) {
-      setCategories(data.data);
-      setTotal(data.pagination?.total || 0);
-    } else if (Array.isArray(data)) {
-      setCategories(data);
-      setTotal(data.length);
+      const res = await fetch(`/api/products/categories?${params}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data.data) {
+          setCategories(data.data);
+          setTotal(data.pagination?.total || 0);
+        } else if (Array.isArray(data)) {
+          setCategories(data);
+          setTotal(data.length);
+        }
+      } else {
+        console.error("Failed to load categories", data);
+        setCategories([]);
+        setTotal(0);
+      }
+    } finally {
+      setListLoading(false);
+      setLoading(false);
     }
-    setListLoading(false);
   }
 
   useEffect(() => {
@@ -219,55 +231,53 @@ export default function CategoriesPage() {
         </div>
       </div>
 
-      {/* Category Form Modal */}
-      {showCatForm && (
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base">{editingCat ? "Edit Category" : "New Category"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Name</Label>
-                <Input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Oral Dosage Forms" />
-              </div>
-              <div>
-                <Label>Description</Label>
-                <Input value={catDesc} onChange={(e) => setCatDesc(e.target.value)} placeholder="Optional description" />
-              </div>
+      <SideDrawer
+        open={showCatForm}
+        title={editingCat ? "Edit Category" : "New Category"}
+        onClose={() => setShowCatForm(false)}
+        widthClassName="w-[600px] max-w-[100vw]"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Name</Label>
+              <Input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Oral Dosage Forms" />
             </div>
-            <div className="flex gap-2">
-              <Button onClick={saveCat} disabled={!catName.trim()}>Save</Button>
-              <Button variant="outline" onClick={() => setShowCatForm(false)}>Cancel</Button>
+            <div>
+              <Label>Description</Label>
+              <Input value={catDesc} onChange={(e) => setCatDesc(e.target.value)} placeholder="Optional description" />
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowCatForm(false)}>Cancel</Button>
+            <Button onClick={saveCat} disabled={!catName.trim()}>Save</Button>
+          </div>
+        </div>
+      </SideDrawer>
 
-      {/* Subcategory Form Modal */}
-      {showSubForm && (
-        <Card>
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base">{editingSub ? "Edit Subcategory" : "New Subcategory"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <Label>Name</Label>
-                <Input value={subName} onChange={(e) => setSubName(e.target.value)} placeholder="e.g. Tablets" />
-              </div>
-              <div>
-                <Label>Description</Label>
-                <Input value={subDesc} onChange={(e) => setSubDesc(e.target.value)} placeholder="Optional description" />
-              </div>
+      <SideDrawer
+        open={!!showSubForm}
+        title={editingSub ? "Edit Subcategory" : "New Subcategory"}
+        onClose={() => setShowSubForm(null)}
+        widthClassName="w-[600px] max-w-[100vw]"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Name</Label>
+              <Input value={subName} onChange={(e) => setSubName(e.target.value)} placeholder="e.g. Tablets" />
             </div>
-            <div className="flex gap-2">
-              <Button onClick={saveSub} disabled={!subName.trim()}>Save</Button>
-              <Button variant="outline" onClick={() => setShowSubForm(null)}>Cancel</Button>
+            <div>
+              <Label>Description</Label>
+              <Input value={subDesc} onChange={(e) => setSubDesc(e.target.value)} placeholder="Optional description" />
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setShowSubForm(null)}>Cancel</Button>
+            <Button onClick={saveSub} disabled={!subName.trim()}>Save</Button>
+          </div>
+        </div>
+      </SideDrawer>
 
       {/* Categories Table */}
       {loading ? (
@@ -285,6 +295,7 @@ export default function CategoriesPage() {
       ) : (
         <Card className="overflow-hidden">
           <CardContent className="p-0">
+            <div className="hidden md:block">
             <Table className="min-w-full table-fixed">
               <colgroup>
                 <col className="w-[4rem]" />
@@ -395,6 +406,65 @@ export default function CategoriesPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
+
+            <div className="md:hidden p-2 space-y-2">
+              {categories.map((cat) => (
+                <details key={cat.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                  <summary className="list-none cursor-pointer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{cat.name}</div>
+                        <div className="text-xs text-slate-500">{cat.subcategories.length} sub • {cat.productCount} products</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <Badge variant={cat.isActive ? "default" : "secondary"}>{cat.isActive ? "Active" : "Inactive"}</Badge>
+                      </div>
+                    </div>
+                  </summary>
+                  <div className="mt-3 text-sm">
+                    {cat.description && (
+                      <div className="mb-3 text-slate-700">{cat.description}</div>
+                    )}
+                    {cat.subcategories.length > 0 ? (
+                      <div className="space-y-2">
+                        {cat.subcategories.map((sub) => (
+                          <div key={sub.id} className="flex items-center justify-between rounded-md border border-[var(--border)] bg-[var(--muted)]/40 px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="font-medium">{sub.name}</div>
+                              {sub.description && <div className="text-xs text-slate-500 truncate">{sub.description}</div>}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge variant={sub.isActive ? "default" : "secondary"} className="text-[10px]">{sub.isActive ? "Active" : "Inactive"}</Badge>
+                              <span className="text-xs text-slate-600">{sub.productCount}</span>
+                              <Button variant="ghost" size="icon" onClick={() => openSubForm(cat.id, sub)} title="Edit subcategory">
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={() => deleteSub(sub.id)} title="Delete subcategory">
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-slate-500">No subcategories</div>
+                    )}
+                    <div className="mt-3 flex items-center justify-end gap-1">
+                      <Button variant="outline" size="sm" onClick={() => openSubForm(cat.id)}>
+                        <Plus className="h-3 w-3 mr-1" /> Add Subcategory
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => openCatForm(cat)} title="Edit category">
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteCat(cat.id)} title="Delete category">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -403,17 +473,13 @@ export default function CategoriesPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <span>Rows per page</span>
-            <select
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-            >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            <div className="w-[96px]">
+              <SimpleSelect
+                value={String(pageSize)}
+                onChange={(v) => setPageSize(Number(v))}
+                options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -435,7 +501,7 @@ export default function CategoriesPage() {
               disabled={page >= totalPages || listLoading}
               onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             >
-              <ChevronRightIcon className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>

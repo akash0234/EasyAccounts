@@ -27,7 +27,7 @@ export function TopMenuNav() {
   }, [companyRole]);
 
   return (
-    <nav className="mb-6 overflow-x-auto rounded-[24px] border border-slate-200/80 bg-white/85 px-3 py-3 text-slate-700 shadow-xl shadow-slate-950/10 backdrop-blur-sm dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-100">
+    <nav className="mb-6 overflow-x-auto rounded-[24px] border border-slate-200/80 px-3 py-3 text-slate-700 shadow-xl shadow-slate-950/10 backdrop-blur-sm dark:border-white/10  dark:text-slate-100 min-h-[68px] overflow-y-hidden" id="style-2">
       <div className="flex min-w-max items-center gap-2">
         {visibleItems.map((item) => {
           const isActive = matchesNavPath(pathname, item.href, item.match);

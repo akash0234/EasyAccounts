@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -14,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X, Upload, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, Upload, ChevronLeft, ChevronRight } from "lucide-react";
 import { FacilityStockModal, type InventoryStockProduct } from "@/components/inventory/facility-stock-modal";
 import { SearchSelect } from "@/components/ui/search-select";
 
@@ -210,15 +212,14 @@ export default function InventoryPage() {
         </Button>
       </div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{editingId ? "Edit Product" : "New Product"}</CardTitle>
-            <Button variant="ghost" size="icon" onClick={resetForm}><X className="h-4 w-4" /></Button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <SideDrawer
+        open={showForm}
+        title={editingId ? "Edit Product" : "New Product"}
+        onClose={resetForm}
+        widthClassName="w-[920px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Name *</Label>
                   <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
@@ -264,31 +265,32 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Unit</Label>
-                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={formData.unit} onChange={(e) => setFormData({ ...formData, unit: e.target.value })}>
-                    {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  <SimpleSelect
+                    value={formData.unit}
+                    onChange={(v) => setFormData({ ...formData, unit: v })}
+                    options={UNITS.map((u) => ({ value: u, label: u }))}
+                  />
                 </div>
                 <div>
                   <Label>Stock Tracking</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  <SimpleSelect
                     value={formData.trackingMode}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setFormData({
                         ...formData,
-                        trackingMode: e.target.value as "NONE" | "BATCH" | "SERIAL",
-                        openingStock:
-                          e.target.value === "NONE" ? formData.openingStock : 0,
+                        trackingMode: v as "NONE" | "BATCH" | "SERIAL",
+                        openingStock: v === "NONE" ? formData.openingStock : 0,
                       })
                     }
-                  >
-                    <option value="NONE">Bulk / None</option>
-                    <option value="BATCH">Batch</option>
-                    <option value="SERIAL">Serial</option>
-                  </select>
+                    options={[
+                      { value: "NONE", label: "Bulk / None" },
+                      { value: "BATCH", label: "Batch" },
+                      { value: "SERIAL", label: "Serial" },
+                    ]}
+                  />
                 </div>
                 <div>
                   <Label>Category</Label>
@@ -312,7 +314,7 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label>Opening Stock</Label>
                   <Input
@@ -353,15 +355,14 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-4 border-t">
+              <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+                <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
                 <Button type="submit" disabled={loading}>
                   {loading ? "Saving..." : editingId ? "Update" : "Create"}
                 </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+        </form>
+      </SideDrawer>
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -403,15 +404,16 @@ export default function InventoryPage() {
             </div>
             <div>
               <Label className="mb-1 block text-xs uppercase tracking-[0.14em] text-slate-500">Status</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <SimpleSelect
                 value={filterIsActive}
-                onChange={(e) => setFilterIsActive(e.target.value)}
-              >
-                <option value="">All</option>
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
-              </select>
+                onChange={setFilterIsActive}
+                placeholder="All"
+                options={[
+                  { value: "", label: "All" },
+                  { value: "true", label: "Active" },
+                  { value: "false", label: "Inactive" },
+                ]}
+              />
             </div>
             <div className="flex items-end">
               <Button type="button" variant="outline" onClick={resetFilters} className="w-full">
@@ -424,6 +426,7 @@ export default function InventoryPage() {
 
       <Card>
         <CardContent className="p-0">
+          <div className="hidden md:block">
           <Table className="min-w-[70rem] table-fixed">
             <colgroup>
               <col className="w-[4rem]" />
@@ -553,23 +556,83 @@ export default function InventoryPage() {
               )}
             </TableBody>
           </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {products.map((p) => (
+              <details key={p.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {p.imageUrl ? (
+                        <img src={p.imageUrl} alt={p.name} className="h-8 w-8 rounded object-cover" />
+                      ) : (
+                        <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-xs text-slate-400">--</div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-medium">{p.name}</div>
+                        <div className="text-xs text-slate-500">{p.code || "-"} · {p.unit}</div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold">{fmt(p.sellingRate)}</div>
+                      <div className="mt-1">
+                        <Badge variant={p.currentStock <= p.reorderLevel ? "unpaid" : "paid"} className="bg-white/75">
+                          {p.currentStock} {p.unit}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 text-sm">
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <div className="text-[var(--muted-foreground)]">HSN</div>
+                      <div className="font-medium text-[var(--foreground)]">{p.hsn || "-"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[var(--muted-foreground)]">Purchase</div>
+                      <div className="font-medium text-[var(--foreground)]">{fmt(p.purchaseRate)}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedProduct(p)}
+                      title="View facility stock"
+                    >
+                      View Stock
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => handleEdit(p)}>
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)}>
+                        <Trash2 className="h-4 w-4 text-rubick-danger" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </details>
+            ))}
+            {products.length === 0 && (
+              <div className="py-6 text-center text-slate-400">{listLoading ? "Loading..." : "No products found"}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button

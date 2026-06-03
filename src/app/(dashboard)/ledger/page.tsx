@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import {
   Table,
   TableBody,
@@ -108,67 +109,102 @@ export default function LedgerPage() {
         </div>
         <Card>
           <CardContent className="p-0">
-            <Table className="min-w-full table-fixed">
-              <colgroup>
-                <col className="w-[8rem]" />
-                <col />
-                <col className="w-[10rem]" />
-                <col className="w-[9rem]" />
-                <col className="w-[9rem]" />
-                <col className="w-[10rem]" />
-              </colgroup>
-              <TableHead>
-                <TableRow>
-                  <TableHeader className="rounded-l-md bg-rubick-primary text-white">
-                    Date
-                  </TableHeader>
-                  <TableHeader className="bg-rubick-primary text-white">
-                    Description
-                  </TableHeader>
-                  <TableHeader className="bg-rubick-primary text-white">
-                    Type
-                  </TableHeader>
-                  <TableHeader className="bg-rubick-primary text-right text-white">
-                    Debit
-                  </TableHeader>
-                  <TableHeader className="bg-rubick-primary text-right text-white">
-                    Credit
-                  </TableHeader>
-                  <TableHeader className="rounded-r-md bg-rubick-primary text-right text-white">
-                    Balance
-                  </TableHeader>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {entries.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="whitespace-nowrap align-middle">
-                      {fmtDate(e.date)}
-                    </TableCell>
-                    <TableCell className="align-middle">{e.description}</TableCell>
-                    <TableCell className="align-middle">
-                      <Badge variant="secondary">{e.referenceType || "-"}</Badge>
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-middle text-right text-rubick-danger">
-                      {e.debit > 0 ? fmt(e.debit) : "-"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-middle text-right text-rubick-success">
-                      {e.credit > 0 ? fmt(e.credit) : "-"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap align-middle text-right font-medium">
-                      {fmt(e.balanceAfter)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {entries.length === 0 && (
+            <div className="hidden md:block">
+              <Table className="min-w-full table-fixed">
+                <colgroup>
+                  <col className="w-[8rem]" />
+                  <col />
+                  <col className="w-[10rem]" />
+                  <col className="w-[9rem]" />
+                  <col className="w-[9rem]" />
+                  <col className="w-[10rem]" />
+                </colgroup>
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={6} className="py-6 text-center text-slate-400">
-                      No entries yet
-                    </TableCell>
+                    <TableHeader className="rounded-l-md bg-rubick-primary text-white">
+                      Date
+                    </TableHeader>
+                    <TableHeader className="bg-rubick-primary text-white">
+                      Description
+                    </TableHeader>
+                    <TableHeader className="bg-rubick-primary text-white">
+                      Type
+                    </TableHeader>
+                    <TableHeader className="bg-rubick-primary !text-right text-white">
+                      Debit
+                    </TableHeader>
+                    <TableHeader className="bg-rubick-primary !text-right text-white">
+                      Credit
+                    </TableHeader>
+                    <TableHeader className="rounded-r-md bg-rubick-primary !text-right text-white">
+                      Balance
+                    </TableHeader>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHead>
+                <TableBody>
+                  {entries.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="whitespace-nowrap align-middle">
+                        {fmtDate(e.date)}
+                      </TableCell>
+                      <TableCell className="align-middle">{e.description}</TableCell>
+                      <TableCell className="align-middle">
+                        <Badge variant="secondary">{e.referenceType || "-"}</Badge>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-middle !text-right text-rubick-danger">
+                        {e.debit > 0 ? fmt(e.debit) : "-"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-middle !text-right text-rubick-success">
+                        {e.credit > 0 ? fmt(e.credit) : "-"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap align-middle !text-right font-medium">
+                        {fmt(e.balanceAfter)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {entries.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-6 text-center text-slate-400">
+                        No entries yet
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="md:hidden p-2 space-y-2">
+              {entries.map((e) => (
+                <details key={e.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                  <summary className="list-none cursor-pointer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{fmtDate(e.date)}</div>
+                        <div className="text-sm text-slate-700 truncate">{e.description}</div>
+                        <div className="text-xs text-slate-500">{e.referenceType || "-"}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-semibold">{fmt(e.balanceAfter)}</div>
+                      </div>
+                    </div>
+                  </summary>
+                  <div className="mt-3 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="text-[var(--muted-foreground)]">Debit</div>
+                        <div className="font-medium text-rubick-danger">{e.debit > 0 ? fmt(e.debit) : "-"}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[var(--muted-foreground)]">Credit</div>
+                        <div className="font-medium text-rubick-success">{e.credit > 0 ? fmt(e.credit) : "-"}</div>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              ))}
+              {entries.length === 0 && (
+                <div className="py-6 text-center text-slate-400">No entries yet</div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -202,17 +238,13 @@ export default function LedgerPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <span>Rows per page</span>
-            <select
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-            >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            <div className="w-[96px]">
+              <SimpleSelect
+                value={String(pageSize)}
+                onChange={(v) => setPageSize(Number(v))}
+                options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button

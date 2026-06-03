@@ -38,6 +38,7 @@ export const referenceTypeEnum = pgEnum("reference_type", [
 ]);
 export const invoiceTypeEnum = pgEnum("invoice_type", ["SALES", "PURCHASE"]);
 export const invoiceStatusEnum = pgEnum("invoice_status", [
+  "DRAFT",
   "UNPAID",
   "PARTIAL",
   "PAID",
@@ -157,7 +158,6 @@ export const companyPaymentSettings = pgTable(
     isDefault: boolean("is_default").default(false).notNull(),
     upiId: text("upi_id"),
     upiPayeeName: text("upi_payee_name"),
-    qrImageUrl: text("qr_image_url"),
     bankAccountName: text("bank_account_name"),
     bankAccountNumber: text("bank_account_number"),
     bankIfsc: text("bank_ifsc"),
@@ -432,6 +432,27 @@ export const invoiceAdditionalCharges = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [index("invoice_addl_charge_invoice_idx").on(table.invoiceId)]
+);
+
+export const invoiceHistory = pgTable(
+  "invoice_history",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    invoiceId: text("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    oldStatus: invoiceStatusEnum("old_status"),
+    newStatus: invoiceStatusEnum("new_status").notNull(),
+    changedBy: text("changed_by").references(() => users.id),
+    changedAt: timestamp("changed_at").defaultNow().notNull(),
+    notes: text("notes"),
+  },
+  (table) => [index("invoice_history_invoice_idx").on(table.invoiceId)]
 );
 
 export const additionalChargeCatalog = pgTable(
@@ -923,6 +944,7 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   paymentAllocations: many(paymentAllocations),
   sourcedStockDetails: many(stockDetails, { relationName: "sourceInvoiceStockDetails" }),
   soldStockDetails: many(stockDetails, { relationName: "soldInvoiceStockDetails" }),
+  history: many(invoiceHistory),
 }));
 
 export const invoiceItemsRelations = relations(invoiceItems, ({ one, many }) => ({

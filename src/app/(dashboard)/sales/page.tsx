@@ -13,7 +13,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye, MapPin, Receipt, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, Trash2, Eye, MapPin, Receipt, Download, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import { Badge } from "@/components/ui/badge";
 import {
   AddressPickerModal,
@@ -25,6 +26,7 @@ import {
   type AdditionalCharge,
 } from "@/components/invoices/additional-charges-modal";
 import { SearchSelect } from "@/components/ui/search-select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 
 interface Customer {
   id: string;
@@ -67,7 +69,10 @@ interface Invoice {
   deliveryEnabled?: boolean;
   deliveryMode?: string | null;
   deliveryReference?: string | null;
+  customerId?: string | null;
   customer?: { name: string; gstin?: string | null; phone?: string | null; billingAddress?: string | null; city?: string | null } | null;
+  facilityId?: string | null;
+  facility?: { id: string; name: string; code?: string | null } | null;
   billingAddressSnapshot?: string | null;
   shippingAddressSnapshot?: string | null;
   items: { description: string; quantity: number; rate: number; amount: number; gstPercent: number; gstAmount: number; }[];
@@ -109,6 +114,7 @@ export default function SalesPage() {
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [facilitiesList, setFacilitiesList] = useState<Facility[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(false);
   const [customerId, setCustomerId] = useState("");
   const [facilityId, setFacilityId] = useState("");
@@ -333,14 +339,14 @@ export default function SalesPage() {
     const match = existing.find((entry) => entry.batchNo === batchNo);
     const next = match
       ? existing.map((entry) =>
-          entry.batchNo === batchNo
-            ? { ...entry, quantity: entry.quantity + quantity }
-            : entry
-        )
+        entry.batchNo === batchNo
+          ? { ...entry, quantity: entry.quantity + quantity }
+          : entry
+      )
       : [...existing, { batchNo, quantity }];
 
     setItemPatch(idx, {
-      batchNo: next.map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`).join(", "),
+      batchNo: next.map((entry) => `${entry.batchNo}:${entry.quantity}`).join(", "),
     });
     setBatchDraft(idx, { batchNo: "", quantity: "" });
   }
@@ -353,8 +359,30 @@ export default function SalesPage() {
       (entry) => entry.batchNo !== batchNo
     );
     setItemPatch(idx, {
-      batchNo: next.map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`).join(", "),
+      batchNo: next.map((entry) => `${entry.batchNo}:${entry.quantity}`).join(", "),
     });
+  }
+
+  function getItemValidation(item: InvoiceItem) {
+    const trackingMode = getTrackingMode(item.productId);
+    if (trackingMode === "NONE") return null;
+
+    if (trackingMode === "SERIAL") {
+      const serials = splitCsv(item.slNo);
+      if (serials.length !== Math.round(item.quantity)) {
+        return `Serial count must match qty (${Math.round(item.quantity)}).`;
+      }
+    }
+
+    if (trackingMode === "BATCH") {
+      const allocations = parseBatchSelections(item.batchNo);
+      const allocatedQty = allocations.reduce((sum, entry) => sum + entry.quantity, 0);
+      if (allocations.length === 0 || Math.abs(allocatedQty - item.quantity) > 0.0001) {
+        return `Batch allocations must total qty (${item.quantity}).`;
+      }
+    }
+
+    return null;
   }
 
   function selectProduct(idx: number, productId: string) {
@@ -393,43 +421,7 @@ export default function SalesPage() {
     return productsList.find((p) => p.id === productId)?.trackingMode ?? "NONE";
   }
 
-  function getFacilityStock(productId?: string) {
-    if (!productId || !facilityId) return null;
 
-    const cacheKey = `${facilityId}:${productId}`;
-    if (availabilityByKey[cacheKey]) {
-      return availabilityByKey[cacheKey];
-    }
-
-    const product = productsList.find((entry) => entry.id === productId);
-    if (!product) return null;
-
-    return {
-      productId,
-      facilityId,
-      trackingMode: product.trackingMode,
-      unit: product.unit,
-      currentStock:
-        product.facilityStock?.find((row) => row.facilityId === facilityId)?.currentStock ?? 0,
-      batches: [],
-      serials: [],
-      serialCount: 0,
-      updatedAt: null,
-    } satisfies ProductAvailability;
-  }
-
-  function getStockColumnValue(item: InvoiceItem) {
-    const availability = getFacilityStock(item.productId);
-    if (!facilityId || !item.productId || !availability) {
-      return "—";
-    }
-
-    if (availability.trackingMode === "SERIAL") {
-      return `${availability.serialCount} ${availability.unit}`;
-    }
-
-    return `${formatDecimal(availability.currentStock)} ${availability.unit}`;
-  }
 
   async function downloadPdf(invoiceId: string, invoiceNumber: string) {
     try {
@@ -452,92 +444,73 @@ export default function SalesPage() {
     }
   }
 
-  function addSuggestedSerial(idx: number, serialNo: string) {
-    addSerialTag(idx, serialNo);
-  }
-
-  function autoFillSerials(idx: number) {
-    const item = items[idx];
-    const availability = getFacilityStock(item.productId);
-    if (!item || !availability || availability.trackingMode !== "SERIAL") return;
-
-    const selected = splitCsv(item.slNo);
-    const maxCount = Math.max(1, Math.round(item.quantity || 1));
-    const suggestions = availability.serials
-      .map((serial) => serial.serialNo)
-      .filter((serialNo) => !selected.includes(serialNo))
-      .slice(0, Math.max(maxCount - selected.length, 0));
-
-    if (suggestions.length === 0) return;
-
-    const nextSerials = [...selected, ...suggestions];
-    setItemPatch(idx, {
-      slNo: nextSerials.join(", "),
-      quantity: Math.max(item.quantity, nextSerials.length),
-    });
-  }
-
-  function addSuggestedBatch(idx: number, batchNo: string) {
-    const item = items[idx];
-    const availability = getFacilityStock(item.productId);
-    if (!item || !availability || availability.trackingMode !== "BATCH") return;
-
-    const requestedQty = Math.max(item.quantity || 0, 0);
-    const existing = parseBatchSelections(item.batchNo);
-    const allocatedQty = existing.reduce((sum, entry) => sum + entry.quantity, 0);
-    const remainingQty = Math.max(requestedQty - allocatedQty, 0);
-    if (remainingQty <= 0) return;
-
-    const batch = availability.batches.find((entry) => entry.batchNo === batchNo);
-    if (!batch) return;
-
-    const existingEntry = existing.find((entry) => entry.batchNo === batchNo);
-    const alreadyAllocatedForBatch = existingEntry?.quantity ?? 0;
-    const freeInBatch = Math.max(batch.availableQty - alreadyAllocatedForBatch, 0);
-    const takeQty = Math.min(remainingQty, freeInBatch);
-    if (takeQty <= 0) return;
-
-    addBatchTag(idx, batchNo, takeQty);
-    setItemPatch(idx, {
-      expiryDate: batch.expiryDate ? batch.expiryDate.slice(0, 10) : item.expiryDate,
-    });
-  }
-
-  function autoFillBatches(idx: number) {
-    const item = items[idx];
-    const availability = getFacilityStock(item.productId);
-    if (!item || !availability || availability.trackingMode !== "BATCH") return;
-
-    let selections = parseBatchSelections(item.batchNo);
-    let allocatedQty = selections.reduce((sum, entry) => sum + entry.quantity, 0);
-    let remainingQty = Math.max(item.quantity - allocatedQty, 0);
-    if (remainingQty <= 0) return;
-
-    for (const batch of availability.batches) {
-      if (remainingQty <= 0) break;
-
-      const existingEntry = selections.find((entry) => entry.batchNo === batch.batchNo);
-      const allocatedForBatch = existingEntry?.quantity ?? 0;
-      const freeInBatch = Math.max(batch.availableQty - allocatedForBatch, 0);
-      const takeQty = Math.min(remainingQty, freeInBatch);
-      if (takeQty <= 0) continue;
-
-      if (existingEntry) {
-        existingEntry.quantity += takeQty;
-      } else {
-        selections = [...selections, { batchNo: batch.batchNo, quantity: takeQty }];
-      }
-
-      allocatedQty += takeQty;
-      remainingQty = Math.max(item.quantity - allocatedQty, 0);
+  async function handleDeleteInvoice(invoiceId: string, invoiceNumber: string) {
+    if (!confirm(`Are you sure you want to delete invoice ${invoiceNumber}?`)) {
+      return;
     }
 
-    setItemPatch(idx, {
-      batchNo: selections
-        .map((entry) => `${entry.batchNo}:${formatDecimal(entry.quantity)}`)
-        .join(", "),
-    });
+    try {
+      const res = await fetch(`/api/invoices?id=${invoiceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete invoice");
+      }
+      await loadInvoices();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete invoice");
+    }
   }
+
+  async function handleEditInvoice(invoice: Invoice) {
+    if (!(invoice.status === "DRAFT" || invoice.status === "UNPAID")) {
+      alert("Only DRAFT and UNPAID invoices can be edited");
+      return;
+    }
+
+    setEditingInvoice(invoice);
+    setCustomerId(invoice.customerId || "");
+    setFacilitiesList(
+      [
+        {
+          id: invoice.facilityId || invoice.facility?.id || "",
+          code: "",
+          name: invoice.facility?.name || ""
+        }
+      ]);
+    setFacilityId(invoice.facilityId || invoice.facility?.id || "");
+    setDate(invoice.date.split("T")[0]);
+    setDueDate(invoice.dueDate?.split("T")[0] || "");
+    setNotes(invoice.notes || "");
+    setDeliveryEnabled(invoice.deliveryEnabled || false);
+    setDeliveryMode(invoice.deliveryMode || "");
+    setDeliveryReference(invoice.deliveryReference || "");
+    setDiscountEnabled(!!invoice.discountPercent);
+    setDiscountPercent(invoice.discountPercent?.toString() || "0");
+    setDiscountAmount(invoice.discountAmount?.toString() || "0");
+
+    // Load invoice items
+    const itemsRes = await fetch(`/api/invoices/${invoice.id}`);
+    const itemsData = await itemsRes.json();
+    if (itemsData.items) {
+      const formattedItems = itemsData.items.map((item: any) => ({
+        description: item.description,
+        productId: item.productId || "",
+        quantity: item.quantity,
+        rate: item.rate,
+        gstPercent: item.gstPercent,
+        batchNo: item.batchNo || "",
+        slNo: item.slNo || "",
+        expiryDate: item.expiryDate?.split("T")[0] || "",
+      }));
+      setItems(formattedItems.length > 0 ? formattedItems : [{ ...emptyItem }]);
+    }
+
+    setShowForm(true);
+  }
+
+
 
   useEffect(() => {
     if (!facilityId) {
@@ -663,31 +636,57 @@ export default function SalesPage() {
       ? billingSnap
       : formatAddressSnapshot(shippingAddr);
 
-    const res = await fetch("/api/invoices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "SALES",
-        date,
-        dueDate,
-        customerId,
-        facilityId,
-        items,
-        additionalCharges,
-        notes,
-        deliveryEnabled,
-        deliveryMode,
-        deliveryReference,
-        discountEnabled,
-        discountPercent: normalizedDiscountPercent,
-        discountAmount: normalizedDiscountAmount,
-        billingAddressSnapshot: billingSnap || undefined,
-        shippingAddressSnapshot: shippingSnap || undefined,
-      }),
-    });
-    setLoading(false);
-    if (res.ok) {
+    const isEdit = !!editingInvoice;
+    const url = isEdit ? `/api/invoices?id=${editingInvoice.id}&action=edit` : "/api/invoices";
+    const method = isEdit ? "PATCH" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "SALES",
+          date,
+          dueDate,
+          customerId,
+          facilityId,
+          items,
+          additionalCharges,
+          notes,
+          deliveryEnabled,
+          deliveryMode,
+          deliveryReference,
+          discountEnabled,
+          discountPercent: normalizedDiscountPercent,
+          discountAmount: normalizedDiscountAmount,
+          billingAddressSnapshot: billingSnap || undefined,
+          shippingAddressSnapshot: shippingSnap || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save invoice");
+      }
+
+      const saved = await res.json();
+      const invoiceId = isEdit ? editingInvoice!.id : saved.id;
+
+      // Finalize to UNPAID via status change to record history when creating,
+      // and when editing a DRAFT using the primary Submit button.
+      if (!isEdit || (editingInvoice && editingInvoice.status === "DRAFT")) {
+        const finalize = await fetch(`/api/invoices?id=${invoiceId}&action=status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "UNPAID" }),
+        });
+        if (!finalize.ok) {
+          const data = await finalize.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to mark invoice as UNPAID (draft saved)");
+        }
+      }
+
       setShowForm(false);
+      setEditingInvoice(null);
       setItems([{ ...emptyItem }]);
       setAdditionalCharges([]);
       setCustomerId("");
@@ -705,7 +704,95 @@ export default function SalesPage() {
       setBillingAddr(null);
       setShippingAddr(null);
       setShipSameAsBilling(true);
-      load();
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save invoice");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openCreateSales() {
+    setEditingInvoice(null);
+    setCustomerId("");
+    setFacilityId("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setDueDate("");
+    setNotes("");
+    setDeliveryEnabled(false);
+    setDeliveryMode("");
+    setDeliveryReference("");
+    setDiscountEnabled(false);
+    setDiscountPercent("0");
+    setDiscountAmount("0");
+    setItems([{ ...emptyItem }]);
+    setAdditionalCharges([]);
+    setAvailabilityByKey({});
+    setSerialDraftByRow({});
+    setBatchDraftByRow({});
+    setBillingAddr(null);
+    setShippingAddr(null);
+    setShipSameAsBilling(true);
+    setShowForm(true);
+  }
+
+  async function saveDraftEdit() {
+    if (!editingInvoice) return;
+    setLoading(true);
+    try {
+      const billingSnap = formatAddressSnapshot(billingAddr);
+      const shippingSnap = shipSameAsBilling ? billingSnap : formatAddressSnapshot(shippingAddr);
+      const res = await fetch(`/api/invoices?id=${editingInvoice.id}&action=edit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "SALES",
+          date,
+          dueDate,
+          customerId,
+          facilityId,
+          items,
+          additionalCharges,
+          notes,
+          deliveryEnabled,
+          deliveryMode,
+          deliveryReference,
+          discountEnabled,
+          discountPercent: normalizedDiscountPercent,
+          discountAmount: normalizedDiscountAmount,
+          billingAddressSnapshot: billingSnap || undefined,
+          shippingAddressSnapshot: shippingSnap || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save draft");
+      }
+
+      setShowForm(false);
+      setEditingInvoice(null);
+      setItems([{ ...emptyItem }]);
+      setAdditionalCharges([]);
+      setCustomerId("");
+      setFacilityId("");
+      setAvailabilityByKey({});
+      setSerialDraftByRow({});
+      setBatchDraftByRow({});
+      setNotes("");
+      setDeliveryEnabled(false);
+      setDeliveryMode("");
+      setDeliveryReference("");
+      setDiscountEnabled(false);
+      setDiscountPercent("0");
+      setDiscountAmount("0");
+      setBillingAddr(null);
+      setShippingAddr(null);
+      setShipSameAsBilling(true);
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save draft");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -728,334 +815,334 @@ export default function SalesPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold">Sales Invoices</h2>
-        <Button onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-2" /> New Invoice</Button>
+        <Button onClick={openCreateSales}><Plus className="h-4 w-4 mr-2" /> New Invoice</Button>
       </div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>New Sales Invoice</CardTitle>
-            <Button variant="ghost" size="icon" onClick={() => setShowForm(false)}><X className="h-4 w-4" /></Button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <div>
-                  <Label>Customer *</Label>
-                  <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm" value={customerId} onChange={(e) => handleCustomerChange(e.target.value)} required>
-                    <option value="">Select customer</option>
-                    {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <Label>Facility *</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                    value={facilityId}
-                    onChange={(e) => {
-                      const nextFacilityId = e.target.value;
-                      setFacilityId(nextFacilityId);
-                      setAvailabilityByKey({});
-                      setSerialDraftByRow({});
-                      setBatchDraftByRow({});
-                      setItems((current) =>
-                        current.map((item) => ({
-                          ...item,
-                          batchNo: "",
-                          slNo: "",
-                          expiryDate: nextFacilityId ? item.expiryDate : "",
-                        }))
-                      );
-                    }}
-                    required
-                  >
-                    <option value="">Select facility</option>
-                    {facilitiesList.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
-                </div>
-                <div><Label>Date *</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
-                <div><Label>Due Date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
-                <div><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-              </div>
+      <SideDrawer
+        open={showForm}
+        title={editingInvoice ? "Edit Sales Invoice" : "New Sales Invoice"}
+        onClose={() => {
+          setShowForm(false);
+          setEditingInvoice(null);
+        }}
+        widthClassName="w-[880px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Customer *</Label>
+              <SimpleSelect
+                value={customerId}
+                onChange={(v) => handleCustomerChange(v)}
+                placeholder="Select customer"
+                options={[{ value: "", label: "Select customer" }, ...customers.map((c) => ({ value: c.id, label: c.name }))]}
+              />
+            </div>
+            <div>
+              <Label>Facility *</Label>
+              <SearchSelect
+                value={facilityId}
+                displayValue={facilitiesList.find((f) => f.id === facilityId)?.name || ""}
+                endpoint="/api/facilities"
+                placeholder="Select facility"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => {
+                  const nextFacilityId = opt?.id ?? "";
+                  setFacilityId(nextFacilityId);
+                  setAvailabilityByKey({});
+                  setSerialDraftByRow({});
+                  setBatchDraftByRow({});
+                  setItems((current) =>
+                    current.map((item) => ({
+                      ...item,
+                      batchNo: "",
+                      slNo: "",
+                      expiryDate: nextFacilityId ? item.expiryDate : "",
+                    }))
+                  );
+                }}
+              />
+              
+            </div>
+            <div><Label>Date *</Label><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
+            <div><Label>Due Date</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
+            <div><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+          </div>
 
-              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
+          <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <Label className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
+                Billing Address
+              </Label>
+              {customerId && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPickerOpen("billing")}
+                >
+                  {billingAddr ? "Change" : "Select address"}
+                </Button>
+              )}
+            </div>
+            <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm min-h-[2.5rem]">
+              {!customerId ? (
+                <span className="text-[var(--muted-foreground)]">Select a customer first</span>
+              ) : billingAddr ? (
+                <span>{formatAddressSnapshot(billingAddr)}</span>
+              ) : (
+                <span className="text-[var(--muted-foreground)]">No address selected</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <input
+                id="ship-same-as-billing"
+                type="checkbox"
+                checked={shipSameAsBilling}
+                onChange={(e) => setShipSameAsBilling(e.target.checked)}
+                className="h-4 w-4 rounded border border-input"
+              />
+              <Label htmlFor="ship-same-as-billing" className="cursor-pointer">
+                Shipping same as billing
+              </Label>
+            </div>
+
+            {!shipSameAsBilling && (
+              <>
+                <div className="flex items-center justify-between gap-3 pt-2">
                   <Label className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
-                    Billing Address
+                    Shipping Address
                   </Label>
                   {customerId && (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => setPickerOpen("billing")}
+                      onClick={() => setPickerOpen("shipping")}
                     >
-                      {billingAddr ? "Change" : "Select address"}
+                      {shippingAddr ? "Change" : "Select address"}
                     </Button>
                   )}
                 </div>
                 <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm min-h-[2.5rem]">
                   {!customerId ? (
                     <span className="text-[var(--muted-foreground)]">Select a customer first</span>
-                  ) : billingAddr ? (
-                    <span>{formatAddressSnapshot(billingAddr)}</span>
+                  ) : shippingAddr ? (
+                    <span>{formatAddressSnapshot(shippingAddr)}</span>
                   ) : (
                     <span className="text-[var(--muted-foreground)]">No address selected</span>
                   )}
                 </div>
+              </>
+            )}
+          </div>
 
-                <div className="flex items-center gap-3 pt-1">
-                  <input
-                    id="ship-same-as-billing"
-                    type="checkbox"
-                    checked={shipSameAsBilling}
-                    onChange={(e) => setShipSameAsBilling(e.target.checked)}
-                    className="h-4 w-4 rounded border border-input"
+          <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <input
+                id="sales-delivery-enabled"
+                type="checkbox"
+                checked={deliveryEnabled}
+                onChange={(e) => {
+                  setDeliveryEnabled(e.target.checked);
+                  if (!e.target.checked) {
+                    setDeliveryMode("");
+                    setDeliveryReference("");
+                  }
+                }}
+                className="h-4 w-4 rounded border border-input"
+              />
+              <Label htmlFor="sales-delivery-enabled" className="cursor-pointer">
+                Add delivery details
+              </Label>
+            </div>
+
+            {deliveryEnabled && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <Label>Delivery Mode *</Label>
+                  <SimpleSelect
+                    value={deliveryMode}
+                    onChange={setDeliveryMode}
+                    placeholder="Select mode"
+                    options={[
+                      { value: "", label: "Select mode" },
+                      { value: "Courier", label: "Courier" },
+                      { value: "Transport", label: "Transport" },
+                      { value: "Hand Delivery", label: "Hand Delivery" },
+                      { value: "Post", label: "Post" },
+                      { value: "Bus", label: "Bus" },
+                      { value: "Other", label: "Other" },
+                    ]}
                   />
-                  <Label htmlFor="ship-same-as-billing" className="cursor-pointer">
-                    Shipping same as billing
-                  </Label>
                 </div>
+                <div>
+                  <Label>AWB / Reference No. *</Label>
+                  <Input
+                    value={deliveryReference}
+                    onChange={(e) => setDeliveryReference(e.target.value)}
+                    placeholder="AWB number or delivery reference"
+                    required={deliveryEnabled}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
 
-                {!shipSameAsBilling && (
-                  <>
-                    <div className="flex items-center justify-between gap-3 pt-2">
-                      <Label className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-[var(--muted-foreground)]" />
-                        Shipping Address
-                      </Label>
-                      {customerId && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPickerOpen("shipping")}
-                        >
-                          {shippingAddr ? "Change" : "Select address"}
-                        </Button>
-                      )}
-                    </div>
-                    <div className="rounded-md border border-dashed border-[var(--border)] bg-[var(--muted)] px-3 py-2 text-sm min-h-[2.5rem]">
-                      {!customerId ? (
-                        <span className="text-[var(--muted-foreground)]">Select a customer first</span>
-                      ) : shippingAddr ? (
-                        <span>{formatAddressSnapshot(shippingAddr)}</span>
-                      ) : (
-                        <span className="text-[var(--muted-foreground)]">No address selected</span>
-                      )}
-                    </div>
-                  </>
+          <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <input
+                id="sales-discount-enabled"
+                type="checkbox"
+                checked={discountEnabled}
+                onChange={(e) => handleDiscountEnabledChange(e.target.checked)}
+                className="h-4 w-4 rounded border border-input"
+              />
+              <Label htmlFor="sales-discount-enabled" className="cursor-pointer">
+                Apply discount
+              </Label>
+            </div>
+
+            {discountEnabled && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <Label>Discount %</Label>
+                  <Input
+                    type="number"
+                    value={discountPercent}
+                    onChange={(e) => handleDiscountPercentChange(e.target.value)}
+                    min={0}
+                    max={100}
+                    step={0.01}
+                  />
+                </div>
+                <div>
+                  <Label>Discount Value</Label>
+                  <Input
+                    type="number"
+                    value={discountAmount}
+                    onChange={(e) => handleDiscountAmountChange(e.target.value)}
+                    min={0}
+                    max={grossTotal}
+                    step={0.01}
+                  />
+                </div>
+                <div className="flex flex-col justify-end">
+                  <div className="rounded-md bg-[var(--muted)] px-3 py-2 text-sm">
+                    Discount Applied: <span className="font-semibold">{fmt(normalizedDiscountAmount)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <div className="flex items-center gap-2">
+                <Label>Items</Label>
+                {additionalCharges.length > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-rubick-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rubick-primary">
+                    {additionalCharges.length} extra charge
+                    {additionalCharges.length === 1 ? "" : "s"}
+                  </span>
                 )}
               </div>
-
-              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    id="sales-delivery-enabled"
-                    type="checkbox"
-                    checked={deliveryEnabled}
-                    onChange={(e) => {
-                      setDeliveryEnabled(e.target.checked);
-                      if (!e.target.checked) {
-                        setDeliveryMode("");
-                        setDeliveryReference("");
-                      }
-                    }}
-                    className="h-4 w-4 rounded border border-input"
-                  />
-                  <Label htmlFor="sales-delivery-enabled" className="cursor-pointer">
-                    Add delivery details
-                  </Label>
-                </div>
-
-                {deliveryEnabled && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div>
-                      <Label>Delivery Mode *</Label>
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                        value={deliveryMode}
-                        onChange={(e) => setDeliveryMode(e.target.value)}
-                        required={deliveryEnabled}
-                      >
-                        <option value="">Select mode</option>
-                        <option value="Courier">Courier</option>
-                        <option value="Transport">Transport</option>
-                        <option value="Hand Delivery">Hand Delivery</option>
-                        <option value="Post">Post</option>
-                        <option value="Bus">Bus</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <Label>AWB / Reference No. *</Label>
-                      <Input
-                        value={deliveryReference}
-                        onChange={(e) => setDeliveryReference(e.target.value)}
-                        placeholder="AWB number or delivery reference"
-                        required={deliveryEnabled}
-                      />
-                    </div>
-                  </div>
-                )}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowChargesModal(true)}
+                >
+                  <Receipt className="h-3 w-3 mr-1" />
+                  {additionalCharges.length > 0
+                    ? "Edit Charges"
+                    : "Add Additional Charges"}
+                </Button>
+                <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, { ...emptyItem }])} disabled={!facilityId}>
+                  <Plus className="h-3 w-3 mr-1" /> Add Item
+                </Button>
               </div>
-
-              <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <input
-                    id="sales-discount-enabled"
-                    type="checkbox"
-                    checked={discountEnabled}
-                    onChange={(e) => handleDiscountEnabledChange(e.target.checked)}
-                    className="h-4 w-4 rounded border border-input"
-                  />
-                  <Label htmlFor="sales-discount-enabled" className="cursor-pointer">
-                    Apply discount
-                  </Label>
-                </div>
-
-                {discountEnabled && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div>
-                      <Label>Discount %</Label>
-                      <Input
-                        type="number"
-                        value={discountPercent}
-                        onChange={(e) => handleDiscountPercentChange(e.target.value)}
-                        min={0}
-                        max={100}
-                        step={0.01}
-                      />
-                    </div>
-                    <div>
-                      <Label>Discount Value</Label>
-                      <Input
-                        type="number"
-                        value={discountAmount}
-                        onChange={(e) => handleDiscountAmountChange(e.target.value)}
-                        min={0}
-                        max={grossTotal}
-                        step={0.01}
-                      />
-                    </div>
-                    <div className="flex flex-col justify-end">
-                      <div className="rounded-md bg-[var(--muted)] px-3 py-2 text-sm">
-                        Discount Applied: <span className="font-semibold">{fmt(normalizedDiscountAmount)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
+            </div>
+            {!facilityId && (
+              <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Select a facility before adding or choosing line items.
               </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2 gap-2">
-                  <div className="flex items-center gap-2">
-                    <Label>Items</Label>
-                    {additionalCharges.length > 0 && (
-                      <span className="inline-flex items-center rounded-full bg-rubick-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-rubick-primary">
-                        {additionalCharges.length} extra charge
-                        {additionalCharges.length === 1 ? "" : "s"}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowChargesModal(true)}
-                    >
-                      <Receipt className="h-3 w-3 mr-1" />
-                      {additionalCharges.length > 0
-                        ? "Edit Charges"
-                        : "Add Additional Charges"}
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setItems([...items, { ...emptyItem }])} disabled={!facilityId}>
-                      <Plus className="h-3 w-3 mr-1" /> Add Item
-                    </Button>
-                  </div>
-                </div>
-                {!facilityId && (
-                  <div className="rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    Select a facility before adding or choosing line items.
-                  </div>
-                )}
-                <div className="space-y-2 overflow-x-auto">
-                  {items.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="grid min-w-[1460px] grid-cols-[minmax(240px,1.55fr)_120px_minmax(240px,1.35fr)_minmax(240px,1.35fr)_120px_80px_90px_70px_100px_40px] items-start gap-2"
-                    >
-                      {(() => {
-                        const trackingMode = getTrackingMode(item.productId);
-                        const isBatch = trackingMode === "BATCH";
-                        const isSerial = trackingMode === "SERIAL";
-                        return (
-                          <>
+            )}
+            <div className="space-y-2 overflow-x-auto">
+              {items.map((item, idx) => {
+                const trackingMode = getTrackingMode(item.productId);
+                const isBatch = trackingMode === "BATCH";
+                const isSerial = trackingMode === "SERIAL";
+                const serialTags = splitCsv(item.slNo);
+                const batchTags = parseBatchSelections(item.batchNo);
+                const validationMessage = getItemValidation(item);
+                return (
+                  <div key={idx} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-start">
                       <div className="min-w-0">
-{idx === 0 && <Label className="text-xs">Product</Label>}
+                        <Label className="text-xs">Product</Label>
                         <SearchSelect
                           value={item.productId || ""}
                           displayValue={getProductDisplay(
                             productsList.find((p) => p.id === item.productId)
                           )}
                           endpoint="/api/products"
-                          placeholder={facilityId ? "Search product" : "Select facility first"}
-                          disabled={!facilityId}
+                          placeholder="Search product"
                           mapResult={(row) => {
                             const product = row as unknown as Product;
                             return {
                               id: product.id,
                               label: getProductDisplay(product),
-                              hint: `${product.currentStock} ${product.unit}`,
+                              hint: `${product.trackingMode} • ${product.currentStock} ${product.unit}`,
                             };
                           }}
                           onChange={(opt) => selectProduct(idx, opt?.id ?? "")}
                         />
                       </div>
                       <div className="min-w-0">
-                        {idx === 0 && <Label className="text-xs">Current Stock</Label>}
-                        <div className="flex h-9 items-center rounded-md border border-input bg-[var(--muted)] px-3 text-sm font-medium">
-                          {getStockColumnValue(item)}
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        {idx === 0 && <Label className="text-xs">Batch No{isBatch ? " *" : ""}</Label>}
+                        <Label className="text-xs">Batch No{isBatch ? " *" : ""}</Label>
                         {isBatch ? (
                           <>
                             <div className="flex gap-2">
-                              <select
-                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                                value=""
-                                onChange={(e) => {
-                                  const nextBatchNo = e.target.value;
-                                  if (!nextBatchNo) return;
-                                  addSuggestedBatch(idx, nextBatchNo);
-                                }}
-                                disabled={!facilityId}
-                              >
-                                <option value="">Select available batch</option>
-                                {(getFacilityStock(item.productId)?.batches ?? [])
-                                  .filter((batch) => batch.availableQty > 0)
-                                  .map((batch) => (
-                                    <option key={batch.batchNo} value={batch.batchNo}>
-                                      {batch.batchNo} ({formatDecimal(batch.availableQty)})
-                                    </option>
-                                  ))}
-                              </select>
+                              <Input
+                                value={batchDraftByRow[idx]?.batchNo ?? ""}
+                                onChange={(e) => setBatchDraft(idx, { batchNo: e.target.value })}
+                                placeholder="Batch no"
+                              />
+                              <Input
+                                type="number"
+                                value={batchDraftByRow[idx]?.quantity ?? ""}
+                                onChange={(e) => setBatchDraft(idx, { quantity: e.target.value })}
+                                placeholder="Qty"
+                                min={0.01}
+                                step={0.01}
+                                className="w-[78px] shrink-0"
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addBatchTag(idx)}>
+                                Add
+                              </Button>
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {parseBatchSelections(item.batchNo).map((entry) => (
-                                <button
-                                  key={entry.batchNo}
-                                  type="button"
-                                  className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-[10px] font-medium"
-                                  onClick={() => removeBatchTag(idx, entry.batchNo)}
-                                >
-                                  {entry.batchNo}:{formatDecimal(entry.quantity)} ×
-                                </button>
-                              ))}
+                              {batchTags.length === 0 ? (
+                                <span className="text-xs text-[var(--muted-foreground)]">
+                                  Add one or more batches until total matches qty.
+                                </span>
+                              ) : (
+                                batchTags.map((entry) => (
+                                  <button
+                                    key={entry.batchNo}
+                                    type="button"
+                                    className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
+                                    onClick={() => removeBatchTag(idx, entry.batchNo)}
+                                  >
+                                    {entry.batchNo}:{entry.quantity} ×
+                                  </button>
+                                ))
+                              )}
                             </div>
                           </>
                         ) : (
@@ -1063,48 +1150,47 @@ export default function SalesPage() {
                             value={item.batchNo}
                             onChange={(e) => updateItem(idx, "batchNo", e.target.value)}
                             placeholder={isSerial ? "Optional shared batch" : "N/A"}
-                            disabled={!facilityId || trackingMode === "NONE"}
+                            disabled={trackingMode === "NONE"}
                           />
                         )}
                       </div>
                       <div className="min-w-0">
-                        {idx === 0 && <Label className="text-xs">SL No{isSerial ? " *" : ""}</Label>}
+                        <Label className="text-xs">SL No{isSerial ? " *" : ""}</Label>
                         {isSerial ? (
                           <>
                             <div className="flex gap-2">
-                              <select
-                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                                value=""
-                                onChange={(e) => {
-                                  const nextSerial = e.target.value;
-                                  if (!nextSerial) return;
-                                  addSuggestedSerial(idx, nextSerial);
+                              <Input
+                                value={serialDraftByRow[idx] ?? ""}
+                                onChange={(e) => setSerialDraft(idx, e.target.value)}
+                                placeholder="Enter serial no"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === ",") {
+                                    e.preventDefault();
+                                    addSerialTag(idx);
+                                  }
                                 }}
-                                disabled={!facilityId}
-                              >
-                                <option value="">Select available serial</option>
-                                {(getFacilityStock(item.productId)?.serials ?? [])
-                                  .filter((serial) => !splitCsv(item.slNo).includes(serial.serialNo))
-                                  .map((serial) => (
-                                    <option key={serial.serialNo} value={serial.serialNo}>
-                                      {serial.batchNo
-                                        ? `${serial.serialNo} [${serial.batchNo}]`
-                                        : serial.serialNo}
-                                    </option>
-                                  ))}
-                              </select>
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addSerialTag(idx)}>
+                                Add
+                              </Button>
                             </div>
                             <div className="mt-1 flex flex-wrap gap-1">
-                              {splitCsv(item.slNo).map((serial) => (
-                                <button
-                                  key={serial}
-                                  type="button"
-                                  className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-[10px] font-medium"
-                                  onClick={() => removeSerialTag(idx, serial)}
-                                >
-                                  {serial} ×
-                                </button>
-                              ))}
+                              {serialTags.length === 0 ? (
+                                <span className="text-xs text-[var(--muted-foreground)]">
+                                  Add serial tags until count matches qty.
+                                </span>
+                              ) : (
+                                serialTags.map((serial) => (
+                                  <button
+                                    key={serial}
+                                    type="button"
+                                    className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
+                                    onClick={() => removeSerialTag(idx, serial)}
+                                  >
+                                    {serial} ×
+                                  </button>
+                                ))
+                              )}
                             </div>
                           </>
                         ) : (
@@ -1116,70 +1202,215 @@ export default function SalesPage() {
                           />
                         )}
                       </div>
-                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Expiry</Label>}<Input type="date" value={item.expiryDate} onChange={(e) => updateItem(idx, "expiryDate", e.target.value)} /></div>
-                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Qty</Label>}<Input type="number" value={item.quantity} onChange={(e) => updateItem(idx, "quantity", isSerial ? Math.max(1, Math.round(Number(e.target.value) || 1)) : Number(e.target.value))} min={isSerial ? 1 : 0.01} step={isSerial ? 1 : 0.01} /></div>
-                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">Rate</Label>}<Input type="number" value={item.rate} onChange={(e) => updateItem(idx, "rate", Number(e.target.value))} min={0} /></div>
-                      <div className="min-w-0">{idx === 0 && <Label className="text-xs">GST %</Label>}<Input type="number" value={item.gstPercent} onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))} min={0} max={28} /></div>
-                      <div className="min-w-0 pt-1 text-right text-sm font-medium">{fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}</div>
-                      <div className="min-w-0">{items.length > 1 && <Button type="button" variant="ghost" size="icon" onClick={() => setItems(items.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
-                          </>
-                        );
-                      })()}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+                      <div className="min-w-0">
+                        <Label className="text-xs">Expiry</Label>
+                        <Input
+                          type="date"
+                          value={item.expiryDate}
+                          onChange={(e) => updateItem(idx, "expiryDate", e.target.value)}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <Label className="text-xs">Qty</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) =>
+                            updateItem(
+                              idx,
+                              "quantity",
+                              isSerial
+                                ? Math.max(1, Math.round(Number(e.target.value) || 1))
+                                : Number(e.target.value)
+                            )
+                          }
+                          min={isSerial ? 1 : 0.01}
+                          step={isSerial ? 1 : 0.01}
+                        />
+                        {validationMessage && (
+                          <p className="mt-1 text-xs text-red-600">{validationMessage}</p>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <Label className="text-xs">Rate</Label>
+                        <Input
+                          type="number"
+                          value={item.rate}
+                          onChange={(e) => updateItem(idx, "rate", Number(e.target.value))}
+                          min={0}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <Label className="text-xs">GST %</Label>
+                        <Input
+                          type="number"
+                          value={item.gstPercent}
+                          onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))}
+                          min={0}
+                          max={28}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <Label className="text-xs">Line Total</Label>
+                        <Input
+                          value={fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}
+                          readOnly
+                          className="text-right font-medium"
+                        />
+                      </div>
+
+                    </div>
+                    {items.length > 1 && (
+                      <div className="flex justify-center h-8  mt-2 w-full rounded-md border border-input bg-red-500 px-3 py-1 text-sm">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                          aria-label="Remove item"
+                          className="mt-[-8px]"
+                        >
+                          <Trash2 className="h-4 w-4 text-white" />
+                        </Button>
+                      </div>
+
+                    )}
+
+                  </div>
+                );
+              })}
+            </div>
+            {additionalCharges.length > 0 && (
+              <div className="mt-4 rounded-lg border border-dashed border-[var(--border)] bg-[var(--muted)]/40 p-3">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Selected Additional Charges
+                </p>
+                <div className="space-y-2">
+                  {additionalCharges.map((charge, idx) => (
+                    <div
+                      key={`${charge.name}-${idx}`}
+                      className="flex items-center justify-between gap-3 rounded-md bg-[var(--card)] px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <div className="font-medium">{charge.name}</div>
+                        <div className="text-xs text-[var(--muted-foreground)]">
+                          {charge.hsnSac ? `HSN/SAC ${charge.hsnSac} · ` : ""}
+                          GST {formatDecimal(charge.gstPercent)}%
+                          {(charge.discountAmount ?? 0) > 0
+                            ? ` · Disc ${fmt(charge.discountAmount ?? 0)}`
+                            : ""}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {fmt(chargeLineTotal(charge))}
+                        </div>
+                        <div className="text-xs text-[var(--muted-foreground)]">
+                          Base {fmt(charge.amount)}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
-                {additionalCharges.length > 0 && (
-                  <div className="mt-4 rounded-lg border border-dashed border-[var(--border)] bg-[var(--muted)]/40 p-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                      Selected Additional Charges
-                    </p>
-                    <div className="space-y-2">
-                      {additionalCharges.map((charge, idx) => (
-                        <div
-                          key={`${charge.name}-${idx}`}
-                          className="flex items-center justify-between gap-3 rounded-md bg-[var(--card)] px-3 py-2 text-sm"
-                        >
-                          <div>
-                            <div className="font-medium">{charge.name}</div>
-                            <div className="text-xs text-[var(--muted-foreground)]">
-                              {charge.hsnSac ? `HSN/SAC ${charge.hsnSac} · ` : ""}
-                              GST {formatDecimal(charge.gstPercent)}%
-                              {(charge.discountAmount ?? 0) > 0
-                                ? ` · Disc ${fmt(charge.discountAmount ?? 0)}`
-                                : ""}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-medium">
-                              {fmt(chargeLineTotal(charge))}
-                            </div>
-                            <div className="text-xs text-[var(--muted-foreground)]">
-                              Base {fmt(charge.amount)}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
+            )}
+          </div>
 
-              <div className="flex justify-between items-center pt-4 border-t">
-                <div className="space-y-1 text-right">
-                  <div className="text-sm text-[var(--muted-foreground)]">Gross Total: {fmt(grossTotal)}</div>
-                  {discountEnabled && normalizedDiscountAmount > 0 && (
-                    <div className="text-sm text-green-700">
-                      Discount: -{fmt(normalizedDiscountAmount)} ({formatDecimal(normalizedDiscountPercent)}%)
-                    </div>
-                  )}
-                  <div className="text-lg font-bold">Total: {fmt(finalTotal)}</div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-between gap-2">
+            <div className="space-y-1 text-right">
+              <div className="text-sm text-[var(--muted-foreground)]">Gross Total: {fmt(grossTotal)}</div>
+              {discountEnabled && normalizedDiscountAmount > 0 && (
+                <div className="text-sm text-green-700">
+                  Discount: -{fmt(normalizedDiscountAmount)} ({formatDecimal(normalizedDiscountPercent)}%)
                 </div>
-                <Button type="submit" disabled={loading}>{loading ? "Creating..." : "Create Invoice"}</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+              )}
+              <div className="text-lg font-bold">Total: {fmt(finalTotal)}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingInvoice(null); }}>Cancel</Button>
+              {!editingInvoice && (
+                <Button type="button" variant="outline" disabled={loading} onClick={async () => {
+                  // Save as DRAFT on create (no status transition)
+                  setLoading(true);
+                  try {
+                    const billingSnap = formatAddressSnapshot(billingAddr);
+                    const shippingSnap = shipSameAsBilling ? billingSnap : formatAddressSnapshot(shippingAddr);
+                    const res = await fetch("/api/invoices", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        type: "SALES",
+                        date,
+                        dueDate,
+                        customerId,
+                        facilityId,
+                        items,
+                        additionalCharges,
+                        notes,
+                        deliveryEnabled,
+                        deliveryMode,
+                        deliveryReference,
+                        discountEnabled,
+                        discountPercent: normalizedDiscountPercent,
+                        discountAmount: normalizedDiscountAmount,
+                        billingAddressSnapshot: billingSnap || undefined,
+                        shippingAddressSnapshot: shippingSnap || undefined,
+                      }),
+                    });
+                    if (!res.ok) {
+                      const data = await res.json().catch(() => ({}));
+                      throw new Error(data.error || "Failed to save draft");
+                    }
+                    setShowForm(false);
+                    setEditingInvoice(null);
+                    setItems([{ ...emptyItem }]);
+                    setAdditionalCharges([]);
+                    setCustomerId("");
+                    setFacilityId("");
+                    setAvailabilityByKey({});
+                    setSerialDraftByRow({});
+                    setBatchDraftByRow({});
+                    setNotes("");
+                    setDeliveryEnabled(false);
+                    setDeliveryMode("");
+                    setDeliveryReference("");
+                    setDiscountEnabled(false);
+                    setDiscountPercent("0");
+                    setDiscountAmount("0");
+                    setBillingAddr(null);
+                    setShippingAddr(null);
+                    setShipSameAsBilling(true);
+                    await load();
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "Failed to save draft");
+                  } finally {
+                    setLoading(false);
+                  }
+                }}>
+                  {loading ? "Saving..." : "Save as Draft"}
+                </Button>
+              )}
+              {editingInvoice && editingInvoice.status === "DRAFT" && (
+                <Button type="button" variant="outline" disabled={loading} onClick={saveDraftEdit}>
+                  {loading ? "Saving..." : "Save Draft"}
+                </Button>
+              )}
+              <Button type="submit" disabled={loading}>
+                {loading
+                  ? editingInvoice
+                    ? "Saving..."
+                    : "Creating..."
+                  : editingInvoice
+                    ? (editingInvoice.status === "DRAFT" ? "Save as Unpaid" : "Save Bill")
+                    : "Create Invoice"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </SideDrawer>
 
       <Card className="mb-4">
         <CardContent className="p-4">
@@ -1202,16 +1433,18 @@ export default function SalesPage() {
             </div>
             <div>
               <Label>Status</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <SimpleSelect
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option value="">All</option>
-                <option value="UNPAID">Unpaid</option>
-                <option value="PARTIAL">Partial</option>
-                <option value="PAID">Paid</option>
-              </select>
+                onChange={setFilterStatus}
+                placeholder="All"
+                options={[
+                  { value: "", label: "All" },
+                  { value: "DRAFT", label: "Draft" },
+                  { value: "UNPAID", label: "Unpaid" },
+                  { value: "PARTIAL", label: "Partial" },
+                  { value: "PAID", label: "Paid" },
+                ]}
+              />
             </div>
             <div>
               <Label>Customer</Label>
@@ -1233,18 +1466,14 @@ export default function SalesPage() {
             </div>
             <div>
               <Label>Facility</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <SearchSelect
                 value={filterFacilityId}
-                onChange={(e) => setFilterFacilityId(e.target.value)}
-              >
-                <option value="">All facilities</option>
-                {facilitiesList.map((facility) => (
-                  <option key={facility.id} value={facility.id}>
-                    {facility.name}
-                  </option>
-                ))}
-              </select>
+                displayValue={facilitiesList.find((f) => f.id === filterFacilityId)?.name || ""}
+                endpoint="/api/facilities"
+                placeholder="All facilities"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => setFilterFacilityId(opt?.id ?? "")}
+              />
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -1274,7 +1503,8 @@ export default function SalesPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table className="min-w-full table-fixed">
+          <div className="hidden md:block">
+            <Table className="min-w-full table-fixed">
             <colgroup>
               <col className="w-[11rem]" />
               <col className="w-[8rem]" />
@@ -1352,6 +1582,24 @@ export default function SalesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Edit"
+                        onClick={() => handleEditInvoice(inv)}
+                        disabled={!(inv.status === "DRAFT" || inv.status === "UNPAID")}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Delete"
+                        onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                        disabled={inv.status === "PARTIAL" || inv.status === "PAID"}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         title="Download PDF"
                         onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
                       >
@@ -1369,24 +1617,98 @@ export default function SalesPage() {
                 </TableRow>
               )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {invoices.map((inv) => (
+              <details key={inv.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{inv.invoiceNumber}</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">{new Date(inv.date).toLocaleDateString("en-IN")}</div>
+                      <div className="text-sm text-slate-700 truncate">{inv.customer?.name || "-"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold">{fmt(inv.totalAmount)}</div>
+                      <div className="mt-1">
+                        <Badge
+                          variant={
+                            inv.status === "PAID"
+                              ? "paid"
+                              : inv.status === "PARTIAL"
+                                ? "partial"
+                                : "unpaid"
+                          }
+                        >
+                          {inv.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 text-sm">
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="text-[var(--muted-foreground)]">Paid<br /><span className="font-medium text-[var(--foreground)]">{fmt(inv.paidAmount)}</span></div>
+                    <div className="text-[var(--muted-foreground)] text-right">Balance<br /><span className="font-medium text-[var(--foreground)]">{fmt(inv.totalAmount - inv.paidAmount)}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="View"
+                      onClick={() => setViewInvoice(inv)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Edit"
+                      onClick={() => handleEditInvoice(inv)}
+                      disabled={!(inv.status === "DRAFT" || inv.status === "UNPAID")}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Delete"
+                      onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                      disabled={inv.status === "PARTIAL" || inv.status === "PAID"}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Download PDF"
+                      onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            {invoices.length === 0 && (
+              <div className="py-6 text-center text-slate-400">No sales invoices yet</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5, 10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -1415,7 +1737,7 @@ export default function SalesPage() {
 
       {/* Invoice Detail Popup */}
       {viewInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setViewInvoice(null)}>
+        <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/50" onClick={() => setViewInvoice(null)}>
           <div className="bg-[var(--card)] text-[var(--card-foreground)] rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
               <div>

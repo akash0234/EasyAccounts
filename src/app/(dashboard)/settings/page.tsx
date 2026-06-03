@@ -34,7 +34,6 @@ interface CompanyPaymentSetting {
   isDefault: boolean;
   upiId: string | null;
   upiPayeeName: string | null;
-  qrImageUrl: string | null;
   bankAccountName: string | null;
   bankAccountNumber: string | null;
   bankIfsc: string | null;
@@ -100,7 +99,6 @@ export default function SettingsPage() {
     isDefault: false,
     upiId: "",
     upiPayeeName: "",
-    qrImageUrl: "",
     bankAccountName: "",
     bankAccountNumber: "",
     bankIfsc: "",
@@ -270,7 +268,6 @@ export default function SettingsPage() {
       isDefault: false,
       upiId: "",
       upiPayeeName: "",
-      qrImageUrl: "",
       bankAccountName: "",
       bankAccountNumber: "",
       bankIfsc: "",
@@ -289,7 +286,6 @@ export default function SettingsPage() {
       isDefault: paymentSetting.isDefault,
       upiId: paymentSetting.upiId ?? "",
       upiPayeeName: paymentSetting.upiPayeeName ?? "",
-      qrImageUrl: paymentSetting.qrImageUrl ?? "",
       bankAccountName: paymentSetting.bankAccountName ?? "",
       bankAccountNumber: paymentSetting.bankAccountNumber ?? "",
       bankIfsc: paymentSetting.bankIfsc ?? "",
@@ -300,14 +296,7 @@ export default function SettingsPage() {
     });
   }
 
-  async function handleQrUpload(file: File | null) {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setPaymentForm((current) => ({ ...current, qrImageUrl: String(reader.result ?? "") }));
-    };
-    reader.readAsDataURL(file);
-  }
+  
 
   async function savePaymentSetting(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -357,7 +346,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div>
         <h2 className="text-2xl font-bold">Settings</h2>
         <p className="mt-1 text-sm text-slate-500">
@@ -365,399 +354,418 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Account Context</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <div>
-              <span className="text-slate-500">Organization:</span>{" "}
-              {session?.user.organizationName}
-            </div>
-            <div>
-              <span className="text-slate-500">Organization Role:</span>{" "}
-              {session?.user.organizationRole}
-            </div>
-            <div>
-              <span className="text-slate-500">Active Company:</span>{" "}
-              {session?.user.companyName}
-            </div>
-            <div>
-              <span className="text-slate-500">Company Role:</span>{" "}
-              {session?.user.companyRole}
-            </div>
-            <div>
-              <span className="text-slate-500">User:</span> {session?.user.name}
-            </div>
-            <div>
-              <span className="text-slate-500">Email:</span> {session?.user.email}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Financial Years</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {fys.map((fy) => (
-                <div
-                  key={fy.id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"
-                >
-                  <span className="font-medium">{fy.label}</span>
-                  <span>
-                    {new Date(fy.startDate).toLocaleDateString("en-IN")} -{" "}
-                    {new Date(fy.endDate).toLocaleDateString("en-IN")}
-                  </span>
-                  {fy.isActive && <Badge variant="paid">Active</Badge>}
+      <details className="group rounded-lg border bg-white/50" open>
+        <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium">
+          <span>Overview</span>
+        </summary>
+        <div className="px-2 pb-3">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Account Context</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div>
+                  <span className="text-slate-500">Organization:</span>{" "}
+                  {session?.user.organizationName}
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Organization Companies</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {organizationData?.companies.map((company) => {
-            const isActive = company.id === session?.user.companyId;
-
-            return (
-              <div key={company.id} className="rounded-xl border p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-slate-800">{company.name}</h3>
-                      {isActive && <Badge variant="paid">Active</Badge>}
-                    </div>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {company.email || "No email"}{company.phone ? ` - ${company.phone}` : ""}
-                    </p>
-                  </div>
-                  {!isActive && (
-                    <Button type="button" variant="outline" onClick={() => switchCompany(company.id)}>
-                      Switch To Company
-                    </Button>
-                  )}
+                <div>
+                  <span className="text-slate-500">Organization Role:</span>{" "}
+                  {session?.user.organizationRole}
                 </div>
+                <div>
+                  <span className="text-slate-500">Active Company:</span>{" "}
+                  {session?.user.companyName}
+                </div>
+                <div>
+                  <span className="text-slate-500">Company Role:</span>{" "}
+                  {session?.user.companyRole}
+                </div>
+                <div>
+                  <span className="text-slate-500">User:</span> {session?.user.name}
+                </div>
+                <div>
+                  <span className="text-slate-500">Email:</span> {session?.user.email}
+                </div>
+              </CardContent>
+            </Card>
 
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
-                    Company Members
-                  </p>
-                  {company.members.map((member) => (
+            <Card>
+              <CardHeader>
+                <CardTitle>Financial Years</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {fys.map((fy) => (
                     <div
-                      key={member.id}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"
+                      key={fy.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"
                     >
-                      <div>
-                        <div className="font-medium text-slate-700">{member.name}</div>
-                        <div className="text-slate-500">{member.email}</div>
-                      </div>
-                      <Badge variant={member.role === "ADMIN" ? "default" : "secondary"}>
-                        {member.role}
-                      </Badge>
+                      <span className="font-medium">{fy.label}</span>
+                      <span>
+                        {new Date(fy.startDate).toLocaleDateString("en-IN")} -{" "}
+                        {new Date(fy.endDate).toLocaleDateString("en-IN")}
+                      </span>
+                      {fy.isActive && <Badge variant="paid">Active</Badge>}
                     </div>
                   ))}
                 </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </details>
 
-      {activeCompany && session?.user.companyRole === "ADMIN" && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Active Company Invoice Settings</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-5" onSubmit={saveActiveCompanySettings}>
-              {activeCompanyError && (
-                <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
-                  {activeCompanyError}
-                </div>
-              )}
-              {activeCompanySuccess && (
-                <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
-                  {activeCompanySuccess}
-                </div>
-              )}
+      <details className="group rounded-lg border bg-white/50">
+        <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium">
+          <span>Organization Companies</span>
+        </summary>
+        <div className="px-2 pb-3">
+          <Card className="">
+            {organizationData?.companies.map((company) => {
+              const isActive = company.id === session?.user.companyId;
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <div className="space-y-1.5">
-                  <Label>Company Name</Label>
-                  <Input value={activeCompanyForm.name} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, name: e.target.value })} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>GSTIN</Label>
-                  <Input value={activeCompanyForm.gstin} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, gstin: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>PAN</Label>
-                  <Input value={activeCompanyForm.pan} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pan: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Phone</Label>
-                  <Input value={activeCompanyForm.phone} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, phone: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Email</Label>
-                  <Input type="email" value={activeCompanyForm.email} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, email: e.target.value })} />
-                </div>
-                <div className="space-y-1.5 md:col-span-2">
-                  <Label>Address</Label>
-                  <Input value={activeCompanyForm.address} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, address: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>City</Label>
-                  <Input value={activeCompanyForm.city} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, city: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>State</Label>
-                  <Input value={activeCompanyForm.state} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, state: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Pincode</Label>
-                  <Input value={activeCompanyForm.pincode} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pincode: e.target.value })} />
-                </div>
-              </div>
-
-              <Button type="submit" disabled={activeCompanySaving}>
-                {activeCompanySaving ? "Saving..." : "Save Invoice Settings"}
-              </Button>
-            </form>
-
-            <div className="mt-6 space-y-4 rounded-xl border p-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-800">Multiple Payment Settings</p>
-                <p className="text-xs text-slate-500">
-                  Add multiple UPI IDs, uploaded QR scanners, bank accounts, cheque, or cash options. Only the default setting prints on sales invoices.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {(activeCompany.paymentSettings ?? []).map((paymentSetting) => (
-                  <div key={paymentSetting.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+              return (
+                <div key={company.id} className="rounded-xl p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium text-slate-800">
-                        {paymentSetting.label}{" "}
-                        <Badge variant={paymentSetting.isDefault ? "paid" : "secondary"}>
-                          {paymentSetting.isDefault ? "Default" : paymentSetting.type}
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-slate-800">{company.name}</h3>
+                        {isActive && <Badge variant="paid">Active</Badge>}
+                      </div>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {company.email || "No email"}{company.phone ? ` - ${company.phone}` : ""}
+                      </p>
+                    </div>
+                    {!isActive && (
+                      <Button type="button" variant="outline" onClick={() => switchCompany(company.id)}>
+                        Switch To Company
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                      Company Members
+                    </p>
+                    {company.members.map((member) => (
+                      <div
+                        key={member.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <div className="font-medium text-slate-700">{member.name}</div>
+                          <div className="text-slate-500">{member.email}</div>
+                        </div>
+                        <Badge variant={member.role === "ADMIN" ? "default" : "secondary"}>
+                          {member.role}
                         </Badge>
                       </div>
-                      <div className="text-slate-500">
-                        {paymentSetting.type === "UPI" && (paymentSetting.upiId || "UPI")}
-                        {paymentSetting.type === "BANK" && (paymentSetting.bankName || paymentSetting.bankAccountNumber || "Bank")}
-                        {paymentSetting.type === "CHEQUE" && (paymentSetting.chequePayeeName || "Cheque")}
-                        {paymentSetting.type === "CASH" && "Cash"}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" variant="outline" onClick={() => editPaymentSetting(paymentSetting)}>
-                        Edit
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => deletePaymentSetting(paymentSetting.id)}>
-                        Delete
-                      </Button>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-
-              <form className="space-y-4" onSubmit={savePaymentSetting}>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <Label>Type</Label>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
-                      value={paymentForm.type}
-                      onChange={(e) => setPaymentForm({ ...paymentForm, type: e.target.value as PaymentMethod })}
-                    >
-                      <option value="UPI">UPI</option>
-                      <option value="BANK">Bank Transfer</option>
-                      <option value="CHEQUE">Cheque</option>
-                      <option value="CASH">Cash</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Label</Label>
-                    <Input value={paymentForm.label} onChange={(e) => setPaymentForm({ ...paymentForm, label: e.target.value })} placeholder="Primary UPI / SBI Current" required />
-                  </div>
-                  <label className="flex items-center gap-2 pt-7 text-sm">
-                    <input type="checkbox" checked={paymentForm.isDefault} onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })} />
-                    Show by default on sales invoices
-                  </label>
                 </div>
+              );
+            })}
+          </Card>
+        </div>
+      </details>
 
-                {paymentForm.type === "UPI" && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div className="space-y-1.5">
-                      <Label>UPI ID</Label>
-                      <Input value={paymentForm.upiId} onChange={(e) => setPaymentForm({ ...paymentForm, upiId: e.target.value })} />
+      {activeCompany && session?.user.companyRole === "ADMIN" && (
+        <details className="group rounded-lg border bg-white/50" open>
+          <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium">
+            <span>Active Company Settings</span>
+          </summary>
+          <div className="px-2 pb-3">
+            <Card>
+              <CardHeader>
+                <CardTitle>Active Company Invoice Settings</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-5" onSubmit={saveActiveCompanySettings}>
+                  {activeCompanyError && (
+                    <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
+                      {activeCompanyError}
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>UPI Payee Name</Label>
-                      <Input value={paymentForm.upiPayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, upiPayeeName: e.target.value })} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>Upload Scanner QR</Label>
-                      <Input type="file" accept="image/*" onChange={(e) => handleQrUpload(e.target.files?.[0] ?? null)} />
-                    </div>
-                  </div>
-                )}
-
-                {paymentForm.type === "BANK" && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <Input value={paymentForm.bankAccountName} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountName: e.target.value })} placeholder="Account name" />
-                    <Input value={paymentForm.bankAccountNumber} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountNumber: e.target.value })} placeholder="Account number" />
-                    <Input value={paymentForm.bankIfsc} onChange={(e) => setPaymentForm({ ...paymentForm, bankIfsc: e.target.value })} placeholder="IFSC" />
-                    <Input value={paymentForm.bankName} onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })} placeholder="Bank name" />
-                    <Input value={paymentForm.bankBranch} onChange={(e) => setPaymentForm({ ...paymentForm, bankBranch: e.target.value })} placeholder="Branch" />
-                  </div>
-                )}
-
-                {paymentForm.type === "CHEQUE" && (
-                  <Input value={paymentForm.chequePayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, chequePayeeName: e.target.value })} placeholder="Cheque in favour of" />
-                )}
-
-                <textarea
-                  value={paymentForm.instructions}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, instructions: e.target.value })}
-                  placeholder="Optional instructions for this payment setting"
-                  rows={2}
-                  className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
-                />
-
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={paymentSaving}>
-                    {paymentSaving ? "Saving..." : paymentEditingId ? "Update Payment Setting" : "Add Payment Setting"}
-                  </Button>
-                  {paymentEditingId && (
-                    <Button type="button" variant="outline" onClick={resetPaymentForm}>
-                      Cancel Edit
-                    </Button>
                   )}
+                  {activeCompanySuccess && (
+                    <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
+                      {activeCompanySuccess}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                    <div className="space-y-1.5">
+                      <Label>Company Name</Label>
+                      <Input value={activeCompanyForm.name} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, name: e.target.value })} required />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>GSTIN</Label>
+                      <Input value={activeCompanyForm.gstin} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, gstin: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>PAN</Label>
+                      <Input value={activeCompanyForm.pan} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pan: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Phone</Label>
+                      <Input value={activeCompanyForm.phone} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, phone: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Email</Label>
+                      <Input type="email" value={activeCompanyForm.email} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, email: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                      <Label>Address</Label>
+                      <Input value={activeCompanyForm.address} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, address: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>City</Label>
+                      <Input value={activeCompanyForm.city} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, city: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>State</Label>
+                      <Input value={activeCompanyForm.state} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, state: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Pincode</Label>
+                      <Input value={activeCompanyForm.pincode} onChange={(e) => setActiveCompanyForm({ ...activeCompanyForm, pincode: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <Button type="submit" disabled={activeCompanySaving}>
+                    {activeCompanySaving ? "Saving..." : "Save Invoice Settings"}
+                  </Button>
+                </form>
+
+                <div className="mt-6 space-y-4 rounded-xl border p-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">Multiple Payment Settings</p>
+                    <p className="text-xs text-slate-500">
+                      Add multiple UPI IDs, uploaded QR scanners, bank accounts, cheque, or cash options. Only the default setting prints on sales invoices.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(activeCompany.paymentSettings ?? []).map((paymentSetting) => (
+                      <div key={paymentSetting.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+                        <div>
+                          <div className="font-medium text-slate-800">
+                            {paymentSetting.label}{" "}
+                            <Badge variant={paymentSetting.isDefault ? "paid" : "secondary"}>
+                              {paymentSetting.isDefault ? "Default" : paymentSetting.type}
+                            </Badge>
+                          </div>
+                          <div className="text-slate-500">
+                            {paymentSetting.type === "UPI" && (paymentSetting.upiId || "UPI")}
+                            {paymentSetting.type === "BANK" && (paymentSetting.bankName || paymentSetting.bankAccountNumber || "Bank")}
+                            {paymentSetting.type === "CHEQUE" && (paymentSetting.chequePayeeName || "Cheque")}
+                            {paymentSetting.type === "CASH" && "Cash"}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button type="button" variant="outline" onClick={() => editPaymentSetting(paymentSetting)}>
+                            Edit
+                          </Button>
+                          <Button type="button" variant="outline" onClick={() => deletePaymentSetting(paymentSetting.id)}>
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <form className="space-y-4" onSubmit={savePaymentSetting}>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <Label>Type</Label>
+                        <select
+                          className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                          value={paymentForm.type}
+                          onChange={(e) => setPaymentForm({ ...paymentForm, type: e.target.value as PaymentMethod })}
+                        >
+                          <option value="UPI">UPI</option>
+                          <option value="BANK">Bank Transfer</option>
+                          <option value="CHEQUE">Cheque</option>
+                          <option value="CASH">Cash</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Label</Label>
+                        <Input value={paymentForm.label} onChange={(e) => setPaymentForm({ ...paymentForm, label: e.target.value })} placeholder="Primary UPI / SBI Current" required />
+                      </div>
+                      <label className="flex items-center gap-2 pt-7 text-sm">
+                        <input type="checkbox" checked={paymentForm.isDefault} onChange={(e) => setPaymentForm({ ...paymentForm, isDefault: e.target.checked })} />
+                        Show by default on sales invoices
+                      </label>
+                    </div>
+
+                    {paymentForm.type === "UPI" && (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label>UPI ID</Label>
+                          <Input value={paymentForm.upiId} onChange={(e) => setPaymentForm({ ...paymentForm, upiId: e.target.value })} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label>UPI Payee Name</Label>
+                          <Input value={paymentForm.upiPayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, upiPayeeName: e.target.value })} />
+                        </div>
+                      </div>
+                    )}
+
+                    {paymentForm.type === "BANK" && (
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <Input value={paymentForm.bankAccountName} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountName: e.target.value })} placeholder="Account name" />
+                        <Input value={paymentForm.bankAccountNumber} onChange={(e) => setPaymentForm({ ...paymentForm, bankAccountNumber: e.target.value })} placeholder="Account number" />
+                        <Input value={paymentForm.bankIfsc} onChange={(e) => setPaymentForm({ ...paymentForm, bankIfsc: e.target.value })} placeholder="IFSC" />
+                        <Input value={paymentForm.bankName} onChange={(e) => setPaymentForm({ ...paymentForm, bankName: e.target.value })} placeholder="Bank name" />
+                        <Input value={paymentForm.bankBranch} onChange={(e) => setPaymentForm({ ...paymentForm, bankBranch: e.target.value })} placeholder="Branch" />
+                      </div>
+                    )}
+
+                    {paymentForm.type === "CHEQUE" && (
+                      <Input value={paymentForm.chequePayeeName} onChange={(e) => setPaymentForm({ ...paymentForm, chequePayeeName: e.target.value })} placeholder="Cheque in favour of" />
+                    )}
+
+                    <textarea
+                      value={paymentForm.instructions}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, instructions: e.target.value })}
+                      placeholder="Optional instructions for this payment setting"
+                      rows={2}
+                      className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                    />
+
+                    <div className="flex gap-2">
+                      <Button type="submit" disabled={paymentSaving}>
+                        {paymentSaving ? "Saving..." : paymentEditingId ? "Update Payment Setting" : "Add Payment Setting"}
+                      </Button>
+                      {paymentEditingId && (
+                        <Button type="button" variant="outline" onClick={resetPaymentForm}>
+                          Cancel Edit
+                        </Button>
+                      )}
+                    </div>
+                  </form>
                 </div>
-              </form>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+        </details>
       )}
 
       {canManageOrganization && (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Create Company</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4" onSubmit={handleCompanyCreate}>
-                {companyError && (
-                  <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
-                    {companyError}
-                  </div>
-                )}
-                {companySuccess && (
-                  <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
-                    {companySuccess}
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="company-name">Company Name</Label>
-                  <Input id="company-name" name="name" required placeholder="Acme Retail LLP" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="company-gstin">GSTIN</Label>
-                  <Input id="company-gstin" name="gstin" placeholder="Optional" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="company-email">Email</Label>
-                  <Input id="company-email" name="email" type="email" placeholder="accounts@company.com" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="company-phone">Phone</Label>
-                  <Input id="company-phone" name="phone" placeholder="Optional" />
-                </div>
-                <Button type="submit" disabled={companyLoading}>
-                  {companyLoading ? "Creating..." : "Create Company"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+        <details className="group rounded-lg border bg-white/50">
+          <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium">
+            <span>Administration</span>
+          </summary>
+          <div className="px-2 pb-3">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create Company</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form className="space-y-4" onSubmit={handleCompanyCreate}>
+                    {companyError && (
+                      <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
+                        {companyError}
+                      </div>
+                    )}
+                    {companySuccess && (
+                      <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
+                        {companySuccess}
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="company-name">Company Name</Label>
+                      <Input id="company-name" name="name" required placeholder="Acme Retail LLP" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="company-gstin">GSTIN</Label>
+                      <Input id="company-gstin" name="gstin" placeholder="Optional" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="company-email">Email</Label>
+                      <Input id="company-email" name="email" type="email" placeholder="accounts@company.com" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="company-phone">Phone</Label>
+                      <Input id="company-phone" name="phone" placeholder="Optional" />
+                    </div>
+                    <Button type="submit" disabled={companyLoading}>
+                      {companyLoading ? "Creating..." : "Create Company"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Create Company User</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4" onSubmit={handleUserCreate}>
-                {userError && (
-                  <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
-                    {userError}
-                  </div>
-                )}
-                {userSuccess && (
-                  <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
-                    {userSuccess}
-                  </div>
-                )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-name">Name</Label>
-                  <Input id="user-name" name="name" required placeholder="Priya Sharma" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-email">Email</Label>
-                  <Input id="user-email" name="email" type="email" required placeholder="user@company.com" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-password">Password</Label>
-                  <Input id="user-password" name="password" type="password" required minLength={6} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-company">Company</Label>
-                  <select
-                    id="user-company"
-                    name="companyId"
-                    required
-                    className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
-                    defaultValue=""
-                  >
-                    <option value="" disabled>
-                      Select company
-                    </option>
-                    {organizationData?.companies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="user-role">Company Role</Label>
-                  <select
-                    id="user-role"
-                    name="role"
-                    className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
-                    defaultValue="USER"
-                  >
-                    <option value="ADMIN">ADMIN</option>
-                    <option value="USER">USER</option>
-                  </select>
-                </div>
-                <Button type="submit" disabled={userLoading}>
-                  {userLoading ? "Creating..." : "Create Company User"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create Company User</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <form className="space-y-4" onSubmit={handleUserCreate}>
+                    {userError && (
+                      <div className="rounded-md bg-rubick-danger/10 p-3 text-sm text-rubick-danger">
+                        {userError}
+                      </div>
+                    )}
+                    {userSuccess && (
+                      <div className="rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">
+                        {userSuccess}
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="user-name">Name</Label>
+                      <Input id="user-name" name="name" required placeholder="Priya Sharma" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="user-email">Email</Label>
+                      <Input id="user-email" name="email" type="email" required placeholder="user@company.com" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="user-password">Password</Label>
+                      <Input id="user-password" name="password" type="password" required minLength={6} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="user-company">Company</Label>
+                      <select
+                        id="user-company"
+                        name="companyId"
+                        required
+                        className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                        defaultValue=""
+                      >
+                        <option value="" disabled>
+                          Select company
+                        </option>
+                        {organizationData?.companies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="user-role">Company Role</Label>
+                      <select
+                        id="user-role"
+                        name="role"
+                        className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs"
+                        defaultValue="USER"
+                      >
+                        <option value="ADMIN">ADMIN</option>
+                        <option value="USER">USER</option>
+                      </select>
+                    </div>
+                    <Button type="submit" disabled={userLoading}>
+                      {userLoading ? "Creating..." : "Create Company User"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </details>
       )}
     </div>
   );

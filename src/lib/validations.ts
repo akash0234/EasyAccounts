@@ -60,7 +60,6 @@ export const companyPaymentSettingSchema = z.object({
   isDefault: z.boolean().optional().default(false),
   upiId: z.string().optional(),
   upiPayeeName: z.string().optional(),
-  qrImageUrl: z.string().optional(),
   bankAccountName: z.string().optional(),
   bankAccountNumber: z.string().optional(),
   bankIfsc: z.string().optional(),

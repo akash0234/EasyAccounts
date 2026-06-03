@@ -23,6 +23,7 @@ import {
   toCSV,
 } from "@/components/reports/report-shell";
 import { SearchSelect } from "@/components/ui/search-select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 
 interface ReportRow {
   id: string;
@@ -246,12 +247,17 @@ export default function SalesReportPage() {
                 />
               </Field>
               <Field label="Status">
-                <Select value={status} onChange={setStatus}>
-                  <option value="">All</option>
-                  <option value="UNPAID">Unpaid</option>
-                  <option value="PARTIAL">Partial</option>
-                  <option value="PAID">Paid</option>
-                </Select>
+                <SimpleSelect
+                  value={status}
+                  onChange={setStatus}
+                  placeholder="All"
+                  options={[
+                    { value: "", label: "All" },
+                    { value: "UNPAID", label: "Unpaid" },
+                    { value: "PARTIAL", label: "Partial" },
+                    { value: "PAID", label: "Paid" },
+                  ]}
+                />
               </Field>
               <Field label="Category">
                 <SearchSelect
@@ -318,12 +324,17 @@ export default function SalesReportPage() {
                 <Input type="number" step="0.01" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} />
               </Field>
               <Field label="Group by">
-                <Select value={groupBy} onChange={setGroupBy}>
-                  <option value="">None (detail rows)</option>
-                  <option value="customer">Customer</option>
-                  <option value="product">Product</option>
-                  <option value="month">Month</option>
-                </Select>
+                <SimpleSelect
+                  value={groupBy}
+                  onChange={setGroupBy}
+                  placeholder="None (detail rows)"
+                  options={[
+                    { value: "", label: "None (detail rows)" },
+                    { value: "customer", label: "Customer" },
+                    { value: "product", label: "Product" },
+                    { value: "month", label: "Month" },
+                  ]}
+                />
               </Field>
             </div>
 
@@ -441,17 +452,13 @@ export default function SalesReportPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <span>Rows per page</span>
-            <select
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-            >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            <div className="w-[96px]">
+              <SimpleSelect
+                value={String(pageSize)}
+                onChange={(v) => setPageSize(Number(v))}
+                options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -493,25 +500,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Select({
-  value,
-  onChange,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700 focus:border-rubick-primary focus:outline-none focus:ring-2 focus:ring-rubick-primary/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-    >
-      {children}
-    </select>
-  );
-}
+ 
 
 function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
   const { groupBy, rows } = aggregation;

@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
         isDefault: parsed.data.isDefault,
         upiId: nullable(parsed.data.upiId),
         upiPayeeName: nullable(parsed.data.upiPayeeName),
-        qrImageUrl: nullable(parsed.data.qrImageUrl),
         bankAccountName: nullable(parsed.data.bankAccountName),
         bankAccountNumber: nullable(parsed.data.bankAccountNumber),
         bankIfsc: nullable(parsed.data.bankIfsc),

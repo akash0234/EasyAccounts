@@ -13,7 +13,6 @@ export interface TemplatePaymentSetting {
   isDefault: boolean;
   upiId?: string | null;
   upiPayeeName?: string | null;
-  qrImageUrl?: string | null;
   bankAccountName?: string | null;
   bankAccountNumber?: string | null;
   bankIfsc?: string | null;
@@ -277,7 +276,6 @@ function buildPaymentSettingUpiQrUrl(
   paymentSetting: TemplatePaymentSetting,
   amount: number
 ) {
-  if (paymentSetting.qrImageUrl) return paymentSetting.qrImageUrl;
   const uri = buildPaymentSettingUpiUri(company, paymentSetting, amount);
   if (!uri) return null;
   return `https://quickchart.io/qr?text=${encodeURIComponent(uri)}&size=180`;

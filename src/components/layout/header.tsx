@@ -58,7 +58,7 @@ export function Header() {
           </div>
         </div>
 
-        <div className="hidden flex-1 justify-center px-6 xl:flex">
+        {/* <div className="hidden flex-1 justify-center px-6 xl:flex">
           <label className="rubick-command">
             <Search className="h-4 w-4 text-slate-400" />
             <input
@@ -67,7 +67,7 @@ export function Header() {
               className="h-full w-full bg-transparent text-sm text-slate-600 outline-none placeholder:text-slate-400"
             />
           </label>
-        </div>
+        </div> */}
 
         <div className="ml-auto flex items-center gap-3">
           {session?.user?.companyName && (

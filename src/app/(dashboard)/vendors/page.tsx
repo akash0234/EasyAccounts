@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import {
   Table,
   TableBody,
@@ -13,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Vendor {
   id: string;
@@ -136,28 +138,28 @@ export default function VendorsPage() {
         </Button>
       </div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{editingId ? "Edit Vendor" : "New Vendor"}</CardTitle>
-            <Button variant="ghost" size="icon" onClick={resetForm}><X className="h-4 w-4" /></Button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
-              <div><Label>GSTIN</Label><Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} /></div>
-              <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
-              <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
-              <div><Label>City</Label><Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} /></div>
-              <div><Label>State</Label><Input value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} /></div>
-              <div><Label>Opening Balance</Label><Input type="number" value={formData.openingBalance} onChange={(e) => setFormData({ ...formData, openingBalance: Number(e.target.value) })} /></div>
-              <div className="flex items-end">
-                <Button type="submit" disabled={loading}>{loading ? "Saving..." : editingId ? "Update" : "Create"}</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <SideDrawer
+        open={showForm}
+        title={editingId ? "Edit Vendor" : "New Vendor"}
+        onClose={resetForm}
+        widthClassName="w-[720px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
+            <div><Label>GSTIN</Label><Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} /></div>
+            <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} /></div>
+            <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></div>
+            <div><Label>City</Label><Input value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} /></div>
+            <div><Label>State</Label><Input value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} /></div>
+            <div><Label>Opening Balance</Label><Input type="number" value={formData.openingBalance} onChange={(e) => setFormData({ ...formData, openingBalance: Number(e.target.value) })} /></div>
+          </div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Saving..." : editingId ? "Update" : "Create"}</Button>
+          </div>
+        </form>
+      </SideDrawer>
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -166,6 +168,7 @@ export default function VendorsPage() {
 
       <Card>
         <CardContent className="p-0">
+          <div className="hidden md:block">
           <Table className="min-w-full table-fixed">
             <colgroup>
               <col className="w-[7.5rem]" />
@@ -254,23 +257,64 @@ export default function VendorsPage() {
               )}
             </TableBody>
           </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {vendors.map((v) => (
+              <details key={v.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{v.name}</div>
+                      <div className="text-xs text-slate-500">{v.code || "-"}</div>
+                      <div className="text-sm text-slate-700 truncate">{v.phone || "-"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold">
+                        {(v.ledgerAccount?.balance ?? v.openingBalance).toLocaleString("en-IN", { style: "currency", currency: "INR" })}
+                      </div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 text-sm">
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <div className="text-[var(--muted-foreground)]">GSTIN</div>
+                      <div className="font-medium text-[var(--foreground)]">{v.gstin || "-"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[var(--muted-foreground)]">City</div>
+                      <div className="font-medium text-[var(--foreground)]">{v.city || "-"}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(v)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(v.id)}>
+                      <Trash2 className="h-4 w-4 text-rubick-danger" />
+                    </Button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            {vendors.length === 0 && (
+              <div className="py-6 text-center text-slate-400">{listLoading ? "Loading..." : "No vendors found"}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button

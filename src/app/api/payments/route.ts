@@ -9,12 +9,246 @@ import {
   financialYears,
   customers,
   vendors,
+  stockMovements,
+  facilityStock,
+  products,
+  stockDetails,
+  invoiceItems,
+  invoiceItemAllocations,
 } from "@/db/schema";
 import { paymentSchema } from "@/lib/validations";
 import { generateCode } from "@/lib/code-generator";
 import { CODE_PREFIX } from "@/lib/code-prefixes";
 import { auth } from "@/lib/auth";
 import { eq, and, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
+
+type TrackingMode = "NONE" | "BATCH" | "SERIAL";
+
+function batchMovementLabel(batchAllocations: any[]) {
+  if (batchAllocations.length === 0) return null;
+  if (batchAllocations.length === 1) return batchAllocations[0].batchNo;
+  return "MULTI";
+}
+
+async function processStockTransactions(
+  tx: any,
+  invoice: any,
+  items: any[],
+  companyId: string,
+  facilityId: string
+) {
+  const type = invoice.type;
+  const invoiceId = invoice.id;
+
+  for (const item of items) {
+    if (!item.productId) continue;
+
+    if (type === "PURCHASE") {
+      if (item.trackingMode === "BATCH") {
+        for (const allocation of item.batchAllocations) {
+          await tx.insert(stockDetails).values({
+            companyId,
+            facilityId,
+            productId: item.productId,
+            batchNo: allocation.batchNo,
+            expiryDate: allocation.expiryDate ? new Date(allocation.expiryDate) : null,
+            quantity: allocation.quantity,
+            availableQty: allocation.quantity,
+            sourceInvoiceId: invoiceId,
+            sourceInvoiceItemId: item.record.id,
+          });
+        }
+      } else if (item.trackingMode === "SERIAL") {
+        for (const serial of item.serialNumbers) {
+          await tx.insert(stockDetails).values({
+            companyId,
+            facilityId,
+            productId: item.productId,
+            batchNo: item.batchNo?.trim() || null,
+            serialNo: serial,
+            expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+            quantity: 1,
+            availableQty: 1,
+            sourceInvoiceId: invoiceId,
+            sourceInvoiceItemId: item.record.id,
+          });
+        }
+      }
+
+      await tx.insert(stockMovements).values({
+        companyId,
+        productId: item.productId,
+        facilityId,
+        type: "IN",
+        quantity: item.quantity,
+        batchNo:
+          item.trackingMode === "BATCH"
+            ? batchMovementLabel(item.batchAllocations)
+            : item.batchNo?.trim() || null,
+        referenceType: "INVOICE",
+        referenceId: invoiceId,
+      });
+
+      await tx
+        .update(products)
+        .set({ currentStock: sql`${products.currentStock} + ${item.quantity}` })
+        .where(eq(products.id, item.productId));
+
+      const existingFacilityStock = await tx.query.facilityStock.findFirst({
+        where: and(
+          eq(facilityStock.facilityId, facilityId),
+          eq(facilityStock.productId, item.productId)
+        ),
+      });
+      if (existingFacilityStock) {
+        await tx
+          .update(facilityStock)
+          .set({
+            currentStock: sql`${facilityStock.currentStock} + ${item.quantity}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(facilityStock.id, existingFacilityStock.id));
+      } else {
+        await tx.insert(facilityStock).values({
+          companyId,
+          facilityId,
+          productId: item.productId,
+          currentStock: item.quantity,
+        });
+      }
+    } else {
+      if (item.trackingMode === "BATCH") {
+        for (const allocation of item.batchAllocations) {
+          let remaining = allocation.quantity;
+          const matchingRows = await tx.query.stockDetails.findMany({
+            where: and(
+              eq(stockDetails.companyId, companyId),
+              eq(stockDetails.facilityId, facilityId),
+              eq(stockDetails.productId, item.productId),
+              eq(stockDetails.batchNo, allocation.batchNo),
+              eq(stockDetails.status, "AVAILABLE")
+            ),
+            orderBy: (detail: any, { asc: ascOrder }: any) => [ascOrder(detail.createdAt)],
+          });
+
+          const available = matchingRows.reduce(
+            (sum: number, row: any) => sum + row.availableQty,
+            0
+          );
+          if (available + 0.0001 < allocation.quantity) {
+            throw new Error(
+              `VALIDATION:Insufficient batch stock for ${item.product?.name}. Batch ${allocation.batchNo} has only ${available} available`
+            );
+          }
+
+          for (const row of matchingRows) {
+            if (remaining <= 0) break;
+            const consume = Math.min(row.availableQty, remaining);
+            const newAvailableQty = row.availableQty - consume;
+            await tx
+              .update(stockDetails)
+              .set({
+                availableQty: newAvailableQty,
+                status: newAvailableQty <= 0 ? "SOLD" : "AVAILABLE",
+                soldInvoiceId: newAvailableQty <= 0 ? invoiceId : row.soldInvoiceId,
+                updatedAt: new Date(),
+              })
+              .where(eq(stockDetails.id, row.id));
+            await tx.insert(invoiceItemAllocations).values({
+              invoiceItemId: item.record.id,
+              stockDetailId: row.id,
+              quantity: consume,
+            });
+            remaining -= consume;
+          }
+        }
+      } else if (item.trackingMode === "SERIAL") {
+        const matchingRows = await tx.query.stockDetails.findMany({
+          where: and(
+            eq(stockDetails.companyId, companyId),
+            eq(stockDetails.facilityId, facilityId),
+            eq(stockDetails.productId, item.productId),
+            eq(stockDetails.status, "AVAILABLE"),
+            inArray(stockDetails.serialNo, item.serialNumbers)
+          ),
+        });
+
+        if (matchingRows.length !== item.serialNumbers.length) {
+          throw new Error(
+            `VALIDATION:Serial numbers for ${item.product?.name} are not available`
+          );
+        }
+
+        const rowMap = new Map(
+          matchingRows
+            .filter((row: any) => row.serialNo)
+            .map((row: any) => [row.serialNo as string, row])
+        );
+
+        for (const serial of item.serialNumbers) {
+          const row: any = rowMap.get(serial);
+          if (!row || row.availableQty <= 0) {
+            throw new Error(
+              `VALIDATION:Serial ${serial} for ${item.product?.name} is not available`
+            );
+          }
+          await tx
+            .update(stockDetails)
+            .set({
+              availableQty: 0,
+              status: "SOLD",
+              soldInvoiceId: invoiceId,
+              updatedAt: new Date(),
+            })
+            .where(eq(stockDetails.id, row.id));
+          await tx.insert(invoiceItemAllocations).values({
+            invoiceItemId: item.record.id,
+            stockDetailId: row.id,
+            quantity: 1,
+          });
+        }
+      }
+
+      await tx.insert(stockMovements).values({
+        companyId,
+        productId: item.productId,
+        facilityId,
+        type: "OUT",
+        quantity: item.quantity,
+        batchNo:
+          item.trackingMode === "BATCH"
+            ? batchMovementLabel(item.batchAllocations)
+            : item.batchNo?.trim() || null,
+        referenceType: "INVOICE",
+        referenceId: invoiceId,
+      });
+
+      await tx
+        .update(products)
+        .set({ currentStock: sql`${products.currentStock} - ${item.quantity}` })
+        .where(eq(products.id, item.productId));
+
+      const existingFacilityStock = await tx.query.facilityStock.findFirst({
+        where: and(
+          eq(facilityStock.facilityId, facilityId),
+          eq(facilityStock.productId, item.productId)
+        ),
+      });
+      if (!existingFacilityStock || existingFacilityStock.currentStock + 0.0001 < item.quantity) {
+        throw new Error(
+          `VALIDATION:Insufficient stock for ${item.product?.name} in the selected facility`
+        );
+      }
+      await tx
+        .update(facilityStock)
+        .set({
+          currentStock: sql`${facilityStock.currentStock} - ${item.quantity}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(facilityStock.id, existingFacilityStock.id));
+    }
+  }
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -29,8 +263,8 @@ export async function GET(req: NextRequest) {
   const to = req.nextUrl.searchParams.get("to");
   const customerId = req.nextUrl.searchParams.get("customerId");
   const vendorId = req.nextUrl.searchParams.get("vendorId");
-  const minAmount = Number(req.nextUrl.searchParams.get("minAmount") || "");
-  const maxAmount = Number(req.nextUrl.searchParams.get("maxAmount") || "");
+  const minAmountParam = req.nextUrl.searchParams.get("minAmount");
+  const maxAmountParam = req.nextUrl.searchParams.get("maxAmount");
   const pageParam = Number(req.nextUrl.searchParams.get("page") || "0");
   const pageSizeParam = Number(req.nextUrl.searchParams.get("pageSize") || "25");
   const wantsPagination = req.nextUrl.searchParams.has("page") || req.nextUrl.searchParams.has("pageSize");
@@ -67,12 +301,18 @@ export async function GET(req: NextRequest) {
     conditions.push(eq(payments.vendorId, vendorId));
   }
 
-  if (Number.isFinite(minAmount)) {
-    conditions.push(gte(payments.amount, minAmount));
+  if (minAmountParam !== null) {
+    const n = Number(minAmountParam);
+    if (!Number.isNaN(n)) {
+      conditions.push(gte(payments.amount, n));
+    }
   }
 
-  if (Number.isFinite(maxAmount)) {
-    conditions.push(lte(payments.amount, maxAmount));
+  if (maxAmountParam !== null) {
+    const n = Number(maxAmountParam);
+    if (!Number.isNaN(n)) {
+      conditions.push(lte(payments.amount, n));
+    }
   }
 
   if (q) {
@@ -284,12 +524,47 @@ export async function POST(req: NextRequest) {
             where: eq(invoices.id, alloc.invoiceId),
           });
           if (invoice) {
+            const oldStatus = invoice.status;
             const newPaid = invoice.paidAmount + alloc.amount;
             const newStatus = newPaid >= invoice.totalAmount ? "PAID" : "PARTIAL";
+            
             await tx
               .update(invoices)
               .set({ paidAmount: newPaid, status: newStatus, updatedAt: new Date() })
               .where(eq(invoices.id, alloc.invoiceId));
+
+            // Process stock transactions if transitioning to PARTIAL or PAID from DRAFT/UNPAID
+            if ((newStatus === "PARTIAL" || newStatus === "PAID") && 
+                (oldStatus === "DRAFT" || oldStatus === "UNPAID")) {
+              if (!invoice.facilityId) {
+                throw new Error("Facility is required for stock transactions");
+              }
+
+              const items = await tx.query.invoiceItems.findMany({
+                where: eq(invoiceItems.invoiceId, invoice.id),
+                with: {
+                  product: true,
+                },
+              });
+
+              const normalizedItems = items.map((item) => ({
+                ...item,
+                productId: item.productId,
+                quantity: item.quantity,
+                trackingMode: item.product?.trackingMode ?? "NONE",
+                batchAllocations: [],
+                serialNumbers: [],
+                record: item,
+              }));
+
+              await processStockTransactions(
+                tx,
+                invoice,
+                normalizedItems,
+                companyId,
+                invoice.facilityId
+              );
+            }
           }
         }
       }
@@ -307,12 +582,47 @@ export async function POST(req: NextRequest) {
             where: eq(invoices.id, adv.invoiceId),
           });
           if (invoice) {
+            const oldStatus = invoice.status;
             const newPaid = invoice.paidAmount + adv.amount;
             const newStatus = newPaid >= invoice.totalAmount ? "PAID" : "PARTIAL";
+            
             await tx
               .update(invoices)
               .set({ paidAmount: newPaid, status: newStatus, updatedAt: new Date() })
               .where(eq(invoices.id, adv.invoiceId));
+
+            // Process stock transactions if transitioning to PARTIAL or PAID from DRAFT/UNPAID
+            if ((newStatus === "PARTIAL" || newStatus === "PAID") && 
+                (oldStatus === "DRAFT" || oldStatus === "UNPAID")) {
+              if (!invoice.facilityId) {
+                throw new Error("Facility is required for stock transactions");
+              }
+
+              const items = await tx.query.invoiceItems.findMany({
+                where: eq(invoiceItems.invoiceId, invoice.id),
+                with: {
+                  product: true,
+                },
+              });
+
+              const normalizedItems = items.map((item) => ({
+                ...item,
+                productId: item.productId,
+                quantity: item.quantity,
+                trackingMode: item.product?.trackingMode ?? "NONE",
+                batchAllocations: [],
+                serialNumbers: [],
+                record: item,
+              }));
+
+              await processStockTransactions(
+                tx,
+                invoice,
+                normalizedItems,
+                companyId,
+                invoice.facilityId
+              );
+            }
           }
         }
       }

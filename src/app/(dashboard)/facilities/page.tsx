@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import {
   Table,
   TableBody,
@@ -113,32 +115,35 @@ export default function FacilitiesPage() {
         </Button>
       </div>
 
-      {showForm && (
-        <Card>
-          <CardHeader><CardTitle>New Facility</CardTitle></CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label>Name *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-              </div>
-              <div>
-                <Label>Address</Label>
-                <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
-              </div>
-              <div className="flex items-end gap-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={formData.isDefault} onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })} />
-                  <span className="text-sm">Default facility</span>
-                </label>
-              </div>
-              <div className="md:col-span-3">
-                <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save Facility"}</Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <SideDrawer
+        open={showForm}
+        title="New Facility"
+        onClose={resetForm}
+        widthClassName="w-[640px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Name *</Label>
+              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+            </div>
+            <div>
+              <Label>Address</Label>
+              <Input value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+            </div>
+            <div className="flex items-end gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={formData.isDefault} onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })} />
+                <span className="text-sm">Default facility</span>
+              </label>
+            </div>
+          </div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save Facility"}</Button>
+          </div>
+        </form>
+      </SideDrawer>
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -147,6 +152,7 @@ export default function FacilitiesPage() {
 
       <Card>
         <CardContent className="p-0">
+          <div className="hidden md:block">
           <Table>
             <colgroup>
               <col className="w-[8rem]" />
@@ -180,23 +186,43 @@ export default function FacilitiesPage() {
               )}
             </TableBody>
           </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {facilities.map((f) => (
+              <details key={f.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{f.name}</div>
+                      <div className="text-xs text-slate-500">{f.code || "-"}</div>
+                      <div className="text-sm text-slate-700 truncate">{f.address || "—"}</div>
+                    </div>
+                    <div className="text-right shrink-0 text-xs text-slate-600">
+                      <div>Default: <span className="font-medium">{f.isDefault ? "Yes" : "No"}</span></div>
+                      <div>Status: <span className="font-medium">{f.isActive ? "Active" : "Inactive"}</span></div>
+                    </div>
+                  </div>
+                </summary>
+              </details>
+            ))}
+            {facilities.length === 0 && (
+              <div className="py-6 text-center text-slate-400">{listLoading ? "Loading..." : "No facilities yet. Add your first warehouse or godown."}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button

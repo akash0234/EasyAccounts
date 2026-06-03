@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SimpleSelect } from "@/components/ui/simple-select";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import {
   Table,
   TableBody,
@@ -13,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Search, Trash2, Edit2, X, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Trash2, Edit2, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
 import { AddressPickerModal } from "@/components/customers/address-picker-modal";
 
 interface Customer {
@@ -149,47 +151,47 @@ export default function CustomersPage() {
         </Button>
       </div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{editingId ? "Edit Customer" : "New Customer"}</CardTitle>
-            <Button variant="ghost" size="icon" onClick={resetForm}><X className="h-4 w-4" /></Button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label>Name *</Label>
-                <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-              </div>
-              <div>
-                <Label>GSTIN</Label>
-                <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" />
-              </div>
-              <div>
-                <Label>Phone</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
-              </div>
-              <div>
-                <Label>Email</Label>
-                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
-              </div>
-              <div>
-                <Label>Credit Limit</Label>
-                <Input type="number" value={formData.creditLimit} onChange={(e) => setFormData({ ...formData, creditLimit: Number(e.target.value) })} />
-              </div>
-              <div>
-                <Label>Opening Balance</Label>
-                <Input type="number" value={formData.openingBalance} onChange={(e) => setFormData({ ...formData, openingBalance: Number(e.target.value) })} />
-              </div>
-              <div className="flex items-end">
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Saving..." : editingId ? "Update" : "Create"}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+      <SideDrawer
+        open={showForm}
+        title={editingId ? "Edit Customer" : "New Customer"}
+        onClose={resetForm}
+        widthClassName="w-[720px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label>Name *</Label>
+              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+            </div>
+            <div>
+              <Label>GSTIN</Label>
+              <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+            </div>
+            <div>
+              <Label>Credit Limit</Label>
+              <Input type="number" value={formData.creditLimit} onChange={(e) => setFormData({ ...formData, creditLimit: Number(e.target.value) })} />
+            </div>
+            <div>
+              <Label>Opening Balance</Label>
+              <Input type="number" value={formData.openingBalance} onChange={(e) => setFormData({ ...formData, openingBalance: Number(e.target.value) })} />
+            </div>
+          </div>
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-end gap-2">
+            <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Saving..." : editingId ? "Update" : "Create"}
+            </Button>
+          </div>
+        </form>
+      </SideDrawer>
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -198,114 +200,163 @@ export default function CustomersPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table className="min-w-full table-fixed">
-           
-            <TableHead>
-              <TableRow>
-                <TableHeader className="rounded-l-md bg-rubick-primary text-white w-[7.5rem]">
-                  Code
-                </TableHeader>
-                <TableHeader className="bg-rubick-primary text-white w-[9rem]">
-                  Name
-                </TableHeader>
-                <TableHeader className="bg-rubick-primary text-white w-[11rem]">
-                  Phone
-                </TableHeader>
-                <TableHeader className="bg-rubick-primary text-white w-[8rem]">
-                  GSTIN
-                </TableHeader>
-                <TableHeader className="bg-rubick-primary text-white w-[10rem]">
-                  Addresses
-                </TableHeader>
-                <TableHeader className="bg-rubick-primary !text-right text-white w-[8rem]">
-                  Balance
-                </TableHeader>
-                <TableHeader className="rounded-r-md bg-rubick-primary !text-right text-white w-[7.5rem]">
-                  Actions
-                </TableHeader>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {customers.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="whitespace-nowrap align-middle font-mono text-xs text-slate-500">
-                    {c.code || "-"}
-                  </TableCell>
-                  <TableCell className="align-middle font-medium">
-                    {c.name}
-                  </TableCell>
-                  <TableCell className="align-middle text-slate-500">
-                    {c.phone || "-"}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap align-middle text-xs text-slate-500">
-                    {c.gstin || "-"}
-                  </TableCell>
-                  <TableCell className="align-middle text-slate-500">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setManageAddrsFor({ id: c.id, name: c.name })}
-                    >
-                      <MapPin className="h-3.5 w-3.5 mr-1" />
-                      {c.addresses?.length ?? 0} address
-                      {(c.addresses?.length ?? 0) === 1 ? "" : "es"}
-                    </Button>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap align-middle  !text-right font-medium">
-                    {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString(
-                      "en-IN",
-                      { style: "currency", currency: "INR" }
-                    )}
-                  </TableCell>
-                  <TableCell className="align-middle text-right">
-                    <div className="flex justify-end gap-1">
+          <div className="hidden md:block">
+            <Table className="min-w-full table-fixed">
+             
+              <TableHead>
+                <TableRow>
+                  <TableHeader className="rounded-l-md bg-rubick-primary text-white w-[7.5rem]">
+                    Code
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white w-[9rem]">
+                    Name
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white w-[11rem]">
+                    Phone
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white w-[8rem]">
+                    GSTIN
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white w-[10rem]">
+                    Addresses
+                  </TableHeader>
+                  <TableHeader className="bg-rubick-primary !text-right text-white w-[8rem]">
+                    Balance
+                  </TableHeader>
+                  <TableHeader className="rounded-r-md bg-rubick-primary !text-right text-white w-[7.5rem]">
+                    Actions
+                  </TableHeader>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {customers.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="whitespace-nowrap align-middle font-mono text-xs text-slate-500">
+                      {c.code || "-"}
+                    </TableCell>
+                    <TableCell className="align-middle font-medium">
+                      {c.name}
+                    </TableCell>
+                    <TableCell className="align-middle text-slate-500">
+                      {c.phone || "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-middle text-xs text-slate-500">
+                      {c.gstin || "-"}
+                    </TableCell>
+                    <TableCell className="align-middle text-slate-500">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleEdit(c)}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setManageAddrsFor({ id: c.id, name: c.name })}
                       >
-                        <Edit2 className="h-4 w-4" />
+                        <MapPin className="h-3.5 w-3.5 mr-1" />
+                        {c.addresses?.length ?? 0} address
+                        {(c.addresses?.length ?? 0) === 1 ? "" : "es"}
                       </Button>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap align-middle  !text-right font-medium">
+                      {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString(
+                        "en-IN",
+                        { style: "currency", currency: "INR" }
+                      )}
+                    </TableCell>
+                    <TableCell className="align-middle text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(c)}
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDelete(c.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-rubick-danger" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {customers.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={7}
+                      className="py-6 text-center text-slate-400"
+                    >
+                      {listLoading ? "Loading..." : "No customers found"}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {customers.map((c) => (
+              <details key={c.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{c.name}</div>
+                      <div className="text-xs text-slate-500">{c.code || "-"}</div>
+                      <div className="text-sm text-slate-700 truncate">{c.phone || "-"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold">
+                        {(c.ledgerAccount?.balance ?? c.openingBalance).toLocaleString("en-IN", { style: "currency", currency: "INR" })}
+                      </div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 text-sm">
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <div className="text-[var(--muted-foreground)]">GSTIN</div>
+                      <div className="font-medium text-[var(--foreground)]">{c.gstin || "-"}</div>
+                    </div>
+                    <div className="text-right">
                       <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDelete(c.id)}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setManageAddrsFor({ id: c.id, name: c.name })}
                       >
-                        <Trash2 className="h-4 w-4 text-rubick-danger" />
+                        <MapPin className="h-3.5 w-3.5 mr-1" />
+                        {c.addresses?.length ?? 0} addr{(c.addresses?.length ?? 0) === 1 ? "" : "s"}
                       </Button>
                     </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {customers.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="py-6 text-center text-slate-400"
-                  >
-                    {listLoading ? "Loading..." : "No customers found"}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(c)}>
+                      <Edit2 className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(c.id)}>
+                      <Trash2 className="h-4 w-4 text-rubick-danger" />
+                    </Button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            {customers.length === 0 && (
+              <div className="py-6 text-center text-slate-400">{listLoading ? "Loading..." : "No customers found"}</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button

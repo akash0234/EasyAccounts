@@ -22,6 +22,7 @@ import {
   toCSV,
 } from "@/components/reports/report-shell";
 import { SearchSelect } from "@/components/ui/search-select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 
 interface StockRow {
   id: string;
@@ -199,12 +200,17 @@ export default function StockReportPage() {
                 <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
               </Field>
               <Field label="Type">
-                <Select value={type} onChange={setType}>
-                  <option value="">All</option>
-                  <option value="IN">Inward (IN)</option>
-                  <option value="OUT">Outward (OUT)</option>
-                  <option value="ADJUST">Adjustment</option>
-                </Select>
+                <SimpleSelect
+                  value={type}
+                  onChange={setType}
+                  placeholder="All"
+                  options={[
+                    { value: "", label: "All" },
+                    { value: "IN", label: "Inward (IN)" },
+                    { value: "OUT", label: "Outward (OUT)" },
+                    { value: "ADJUST", label: "Adjustment" },
+                  ]}
+                />
               </Field>
               <Field label="Facility">
                 <SearchSelect
@@ -275,20 +281,30 @@ export default function StockReportPage() {
                 <Input value={batchNo} onChange={(e) => setBatchNo(e.target.value)} placeholder="Batch number" />
               </Field>
               <Field label="Reference">
-                <Select value={referenceType} onChange={setReferenceType}>
-                  <option value="">All references</option>
-                  <option value="INVOICE">Invoice</option>
-                  <option value="ADJUSTMENT">Adjustment</option>
-                </Select>
+                <SimpleSelect
+                  value={referenceType}
+                  onChange={setReferenceType}
+                  placeholder="All references"
+                  options={[
+                    { value: "", label: "All references" },
+                    { value: "INVOICE", label: "Invoice" },
+                    { value: "ADJUSTMENT", label: "Adjustment" },
+                  ]}
+                />
               </Field>
               <Field label="Group by">
-                <Select value={groupBy} onChange={setGroupBy}>
-                  <option value="">None (detail rows)</option>
-                  <option value="product">Product</option>
-                  <option value="facility">Facility</option>
-                  <option value="type">Movement type</option>
-                  <option value="day">Day</option>
-                </Select>
+                <SimpleSelect
+                  value={groupBy}
+                  onChange={setGroupBy}
+                  placeholder="None (detail rows)"
+                  options={[
+                    { value: "", label: "None (detail rows)" },
+                    { value: "product", label: "Product" },
+                    { value: "facility", label: "Facility" },
+                    { value: "type", label: "Movement type" },
+                    { value: "day", label: "Day" },
+                  ]}
+                />
               </Field>
             </div>
 
@@ -349,9 +365,9 @@ export default function StockReportPage() {
                   <TableHeader className="bg-rubick-primary text-white">Type</TableHeader>
                   <TableHeader className="bg-rubick-primary text-white">Product</TableHeader>
                   <TableHeader className="bg-rubick-primary text-white">Facility</TableHeader>
-                  <TableHeader className="bg-rubick-primary text-white">Batch</TableHeader>
+                  <TableHeader className="bg-rubick-primary text-white">Batch/SL</TableHeader>
                   <TableHeader className="bg-rubick-primary text-white">Reference</TableHeader>
-                  <TableHeader className="bg-rubick-primary text-right text-white">Qty</TableHeader>
+                  <TableHeader className="bg-rubick-primary !text-right text-white">Qty</TableHeader>
                   <TableHeader className="rounded-r-md bg-rubick-primary text-white">Notes</TableHeader>
                 </TableRow>
               </TableHead>
@@ -397,17 +413,13 @@ export default function StockReportPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-sm">
             <span>Rows per page</span>
-            <select
-              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-            >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
+            <div className="w-[96px]">
+              <SimpleSelect
+                value={String(pageSize)}
+                onChange={(v) => setPageSize(Number(v))}
+                options={[5,10,25,50,100].map((n) => ({ value: String(n), label: String(n) }))}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -471,25 +483,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Select({
-  value,
-  onChange,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-700 focus:border-rubick-primary focus:outline-none focus:ring-2 focus:ring-rubick-primary/30 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100"
-    >
-      {children}
-    </select>
-  );
-}
+ 
 
 function AggregationTable({ aggregation }: { aggregation: Aggregation }) {
   const { groupBy, rows } = aggregation;

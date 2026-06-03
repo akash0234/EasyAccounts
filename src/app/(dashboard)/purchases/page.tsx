@@ -13,10 +13,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, X, Trash2, Eye, Download, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, X, Trash2, Eye, Download, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
+import { SideDrawer } from "@/components/ui/side-drawer";
 import { Badge } from "@/components/ui/badge";
 import { InvoiceDetailModal } from "@/components/invoices/invoice-detail-modal";
 import { SearchSelect } from "@/components/ui/search-select";
+import { SimpleSelect } from "@/components/ui/simple-select";
 
 interface Vendor {
   id: string;
@@ -63,6 +65,8 @@ interface Invoice {
   paidAmount: number;
   status: string;
   notes?: string | null;
+  vendorId?: string | null;
+  facilityId?: string | null;
   vendor?: {
     name: string;
     gstin?: string | null;
@@ -70,7 +74,7 @@ interface Invoice {
     address?: string | null;
     city?: string | null;
   } | null;
-  facility?: { name: string; address?: string | null } | null;
+  facility?: { id: string; name: string; address?: string | null } | null;
   items: {
     description: string;
     quantity: number;
@@ -125,6 +129,7 @@ export default function PurchasesPage() {
   const [productsList, setProductsList] = useState<Product[]>([]);
   const [facilitiesList, setFacilitiesList] = useState<Facility[]>([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(false);
   const [vendorId, setVendorId] = useState("");
   const [facilityId, setFacilityId] = useState("");
@@ -308,10 +313,10 @@ export default function PurchasesPage() {
     const match = existing.find((entry) => entry.batchNo === batchNo);
     const next = match
       ? existing.map((entry) =>
-          entry.batchNo === batchNo
-            ? { ...entry, quantity: entry.quantity + quantity }
-            : entry
-        )
+        entry.batchNo === batchNo
+          ? { ...entry, quantity: entry.quantity + quantity }
+          : entry
+      )
       : [...existing, { batchNo, quantity }];
 
     setItemPatch(idx, {
@@ -393,14 +398,7 @@ export default function PurchasesPage() {
     }, 0);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const firstInvalid = items.find((item) => getItemValidation(item));
-    if (firstInvalid) {
-      alert(getItemValidation(firstInvalid));
-      return;
-    }
-
+  async function saveDraft() {
     setLoading(true);
     const res = await fetch("/api/invoices", {
       method: "POST",
@@ -418,6 +416,7 @@ export default function PurchasesPage() {
     setLoading(false);
     if (res.ok) {
       setShowForm(false);
+      setEditingInvoice(null);
       setItems([{ ...emptyItem }]);
       setSerialDraftByRow({});
       setBatchDraftByRow({});
@@ -425,7 +424,181 @@ export default function PurchasesPage() {
       setFacilityId("");
       setNotes("");
       load();
+    } else {
+      const data = await res.json();
+      alert(data.error || "Failed to save draft");
     }
+  }
+
+  async function saveDraftEdit() {
+    if (!editingInvoice) return;
+    const firstInvalid = items.find((item) => getItemValidation(item));
+    if (firstInvalid) {
+      alert(getItemValidation(firstInvalid));
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/invoices?id=${editingInvoice.id}&action=edit`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "PURCHASE",
+          date,
+          dueDate,
+          vendorId,
+          facilityId,
+          items,
+          notes,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save draft");
+      }
+
+      setShowForm(false);
+      setEditingInvoice(null);
+      setItems([{ ...emptyItem }]);
+      setSerialDraftByRow({});
+      setBatchDraftByRow({});
+      setVendorId("");
+      setFacilityId("");
+      setNotes("");
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save draft");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function openCreatePurchase() {
+    setEditingInvoice(null);
+    setVendorId("");
+    setFacilityId("");
+    setDate(new Date().toISOString().split("T")[0]);
+    setDueDate("");
+    setNotes("");
+    setItems([{ ...emptyItem }]);
+    setSerialDraftByRow({});
+    setBatchDraftByRow({});
+    setShowForm(true);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const firstInvalid = items.find((item) => getItemValidation(item));
+    if (firstInvalid) {
+      alert(getItemValidation(firstInvalid));
+      return;
+    }
+
+    setLoading(true);
+    const isEdit = !!editingInvoice;
+    const url = isEdit ? `/api/invoices?id=${editingInvoice.id}&action=edit` : "/api/invoices";
+    const method = isEdit ? "PATCH" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "PURCHASE",
+          date,
+          dueDate,
+          vendorId,
+          facilityId,
+          items,
+          notes,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to save invoice");
+      }
+
+      const saved = await res.json();
+      const invoiceId = isEdit ? editingInvoice!.id : saved.id;
+
+      // Finalize: move from DRAFT to UNPAID
+      const finalize = await fetch(`/api/invoices?id=${invoiceId}&action=status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "UNPAID" }),
+      });
+      if (!finalize.ok) {
+        const data = await finalize.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to mark invoice as UNPAID (draft saved)");
+      }
+
+      setShowForm(false);
+      setEditingInvoice(null);
+      setItems([{ ...emptyItem }]);
+      setSerialDraftByRow({});
+      setBatchDraftByRow({});
+      setVendorId("");
+      setFacilityId("");
+      setNotes("");
+      await load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to save invoice");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDeleteInvoice(invoiceId: string, invoiceNumber: string) {
+    if (!confirm(`Are you sure you want to delete invoice ${invoiceNumber}?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/invoices?id=${invoiceId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete invoice");
+      }
+      await loadInvoices();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete invoice");
+    }
+  }
+
+  async function handleEditInvoice(invoice: Invoice) {
+    if (!(invoice.status === "DRAFT" || invoice.status === "UNPAID")) {
+      alert("Only DRAFT and UNPAID invoices can be edited");
+      return;
+    }
+
+    setEditingInvoice(invoice);
+    setVendorId(invoice.vendorId || "");
+    setFacilityId(invoice.facilityId || invoice.facility?.id || "");
+    setDate(invoice.date.split("T")[0]);
+    setDueDate(invoice.dueDate?.split("T")[0] || "");
+    setNotes(invoice.notes || "");
+
+    // Load invoice items
+    const itemsRes = await fetch(`/api/invoices/${invoice.id}`);
+    const itemsData = await itemsRes.json();
+    if (itemsData.items) {
+      const formattedItems = itemsData.items.map((item: any) => ({
+        description: item.description,
+        productId: item.productId || "",
+        quantity: item.quantity,
+        rate: item.rate,
+        gstPercent: item.gstPercent,
+        batchNo: item.batchNo || "",
+        slNo: item.slNo || "",
+        expiryDate: item.expiryDate?.split("T")[0] || "",
+      }));
+      setItems(formattedItems.length > 0 ? formattedItems : [{ ...emptyItem }]);
+    }
+
+    setShowForm(true);
   }
 
   const fmt = (n: number) =>
@@ -470,296 +643,314 @@ export default function PurchasesPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold">Purchase Bills</h2>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={openCreatePurchase}>
           <Plus className="mr-2 h-4 w-4" /> New Purchase
         </Button>
       </div>
 
-      {showForm && (
-        <Card className="mb-6">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>New Purchase Bill</CardTitle>
-            <Button variant="ghost" size="icon" onClick={() => setShowForm(false)}>
-              <X className="h-4 w-4" />
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-                <div>
-                  <Label>Vendor *</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                    value={vendorId}
-                    onChange={(e) => setVendorId(e.target.value)}
-                    required
-                  >
-                    <option value="">Select vendor</option>
-                    {vendors.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Facility *</Label>
-                  <select
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                    value={facilityId}
-                    onChange={(e) => setFacilityId(e.target.value)}
-                    required
-                  >
-                    <option value="">Select facility</option>
-                    {facilitiesList.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <Label>Date *</Label>
-                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
-                </div>
-                <div>
-                  <Label>Due Date</Label>
-                  <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-                <div>
-                  <Label>Notes</Label>
-                  <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
-                </div>
-              </div>
+      <SideDrawer
+        open={showForm}
+        title={editingInvoice ? "Edit Purchase Bill" : "New Purchase Bill"}
+        onClose={() => { setShowForm(false); setEditingInvoice(null); }}
+        widthClassName="w-[880px] max-w-[100vw]"
+      >
+        <form onSubmit={handleSubmit} className="min-h-full flex flex-col gap-4 justify-between">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <Label>Vendor *</Label>
+              <SimpleSelect
+                value={vendorId}
+                onChange={setVendorId}
+                placeholder="Select vendor"
+                options={[{ value: "", label: "Select vendor" }, ...vendors.map((v) => ({ value: v.id, label: v.name }))]}
+              />
+            </div>
+            <div>
+              <Label>Facility *</Label>
+              <SearchSelect
+                value={facilityId}
+                displayValue={facilitiesList.find((f) => f.id === facilityId)?.name || ""}
+                endpoint="/api/facilities"
+                placeholder="Select facility"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => setFacilityId(opt?.id ?? "")}
+              />
+            </div>
+            <div>
+              <Label>Date *</Label>
+              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            </div>
+            <div>
+              <Label>Due Date</Label>
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+          </div>
 
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <Label>Items</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setItems([...items, { ...emptyItem }])}
-                  >
-                    <Plus className="mr-1 h-3 w-3" /> Add Item
-                  </Button>
-                </div>
-                <div className="space-y-2 overflow-x-auto">
-                  {items.map((item, idx) => {
-                    const trackingMode = getTrackingMode(item.productId);
-                    const isBatch = trackingMode === "BATCH";
-                    const isSerial = trackingMode === "SERIAL";
-                    const serialTags = splitCsv(item.slNo);
-                    const batchTags = parseBatchAllocations(item.batchNo);
-                    const validationMessage = getItemValidation(item);
+          <div className="mt-4 pt-4 border-t border-[var(--border)]">
+            <div className="mb-2 flex items-center justify-between">
+              <Label>Items</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setItems([...items, { ...emptyItem }])}
+              >
+                <Plus className="mr-1 h-3 w-3" /> Add Item
+              </Button>
+            </div>
+            <div className="space-y-3">
+              {items.map((item, idx) => {
+                const trackingMode = getTrackingMode(item.productId);
+                const isBatch = trackingMode === "BATCH";
+                const isSerial = trackingMode === "SERIAL";
+                const serialTags = splitCsv(item.slNo);
+                const batchTags = parseBatchAllocations(item.batchNo);
+                const validationMessage = getItemValidation(item);
 
-                    return (
-                      <div
-                        key={idx}
-                        className="grid min-w-[1280px] grid-cols-[minmax(220px,1.45fr)_minmax(220px,1.45fr)_minmax(220px,1.45fr)_120px_80px_90px_70px_100px_40px] items-start gap-2"
-                      >
-                        <div className="min-w-0">
-                          {idx === 0 && <Label className="text-xs">Product</Label>}
-                          <SearchSelect
-                            value={item.productId || ""}
-                            displayValue={getProductDisplay(
-                              productsList.find((p) => p.id === item.productId)
-                            )}
-                            endpoint="/api/products"
-                            placeholder="Search product"
-                            mapResult={(row) => {
-                              const product = row as unknown as Product;
-                              return {
-                                id: product.id,
-                                label: getProductDisplay(product),
-                                hint: `${product.trackingMode} • ${product.currentStock} ${product.unit}`,
-                              };
-                            }}
-                            onChange={(opt) => selectProduct(idx, opt?.id ?? "")}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {idx === 0 && (
+                return (
+                  <div key={idx} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                    <div className="flex">
+                      <div>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-start">
+                          <div className="min-w-0">
+                            <Label className="text-xs">Product</Label>
+                            <SearchSelect
+                              value={item.productId || ""}
+                              displayValue={getProductDisplay(
+                                productsList.find((p) => p.id === item.productId)
+                              )}
+                              endpoint="/api/products"
+                              placeholder="Search product"
+                              mapResult={(row) => {
+                                const product = row as unknown as Product;
+                                return {
+                                  id: product.id,
+                                  label: getProductDisplay(product),
+                                  hint: `${product.trackingMode} • ${product.currentStock} ${product.unit}`,
+                                };
+                              }}
+                              onChange={(opt) => selectProduct(idx, opt?.id ?? "")}
+                            />
+                          </div>
+                          <div className="min-w-0">
                             <Label className="text-xs">Batch No{isBatch ? " *" : ""}</Label>
-                          )}
-                          {isBatch ? (
-                            <>
-                              <div className="flex gap-2">
-                                <Input
-                                  value={batchDraftByRow[idx]?.batchNo ?? ""}
-                                  onChange={(e) => setBatchDraft(idx, { batchNo: e.target.value })}
-                                  placeholder="Batch no"
-                                />
-                                <Input
-                                  type="number"
-                                  value={batchDraftByRow[idx]?.quantity ?? ""}
-                                  onChange={(e) => setBatchDraft(idx, { quantity: e.target.value })}
-                                  placeholder="Qty"
-                                  min={0.01}
-                                  step={0.01}
-                                  className="w-[78px] shrink-0"
-                                />
-                                <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addBatchTag(idx)}>
-                                  Add
-                                </Button>
-                              </div>
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {batchTags.length === 0 ? (
-                                  <span className="text-xs text-[var(--muted-foreground)]">
-                                    Add one or more batches until total matches qty.
-                                  </span>
-                                ) : (
-                                  batchTags.map((entry) => (
-                                    <button
-                                      key={entry.batchNo}
-                                      type="button"
-                                      className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
-                                      onClick={() => removeBatchTag(idx, entry.batchNo)}
-                                    >
-                                      {entry.batchNo}:{entry.quantity} ×
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <Input
-                              value={item.batchNo}
-                              onChange={(e) => updateItem(idx, "batchNo", e.target.value)}
-                              placeholder={isSerial ? "Optional shared batch" : "N/A"}
-                              disabled={trackingMode === "NONE"}
-                            />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          {idx === 0 && (
+                            {isBatch ? (
+                              <>
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={batchDraftByRow[idx]?.batchNo ?? ""}
+                                    onChange={(e) => setBatchDraft(idx, { batchNo: e.target.value })}
+                                    placeholder="Batch no"
+                                  />
+                                  <Input
+                                    type="number"
+                                    value={batchDraftByRow[idx]?.quantity ?? ""}
+                                    onChange={(e) => setBatchDraft(idx, { quantity: e.target.value })}
+                                    placeholder="Qty"
+                                    min={0.01}
+                                    step={0.01}
+                                    className="w-[78px] shrink-0"
+                                  />
+                                  <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addBatchTag(idx)}>
+                                    Add
+                                  </Button>
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {batchTags.length === 0 ? (
+                                    <span className="text-xs text-[var(--muted-foreground)]">
+                                      Add one or more batches until total matches qty.
+                                    </span>
+                                  ) : (
+                                    batchTags.map((entry) => (
+                                      <button
+                                        key={entry.batchNo}
+                                        type="button"
+                                        className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
+                                        onClick={() => removeBatchTag(idx, entry.batchNo)}
+                                      >
+                                        {entry.batchNo}:{entry.quantity} ×
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <Input
+                                value={item.batchNo}
+                                onChange={(e) => updateItem(idx, "batchNo", e.target.value)}
+                                placeholder={isSerial ? "Optional shared batch" : "N/A"}
+                                disabled={trackingMode === "NONE"}
+                              />
+                            )}
+                          </div>
+                          <div className="min-w-0">
                             <Label className="text-xs">SL No{isSerial ? " *" : ""}</Label>
-                          )}
-                          {isSerial ? (
-                            <>
-                              <div className="flex gap-2">
-                                <Input
-                                  value={serialDraftByRow[idx] ?? ""}
-                                  onChange={(e) => setSerialDraft(idx, e.target.value)}
-                                  placeholder="Enter serial no"
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === ",") {
-                                      e.preventDefault();
-                                      addSerialTag(idx);
-                                    }
-                                  }}
-                                />
-                                <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addSerialTag(idx)}>
-                                  Add
-                                </Button>
-                              </div>
-                              <div className="mt-1 flex flex-wrap gap-1">
-                                {serialTags.length === 0 ? (
-                                  <span className="text-xs text-[var(--muted-foreground)]">
-                                    Add serial tags until count matches qty.
-                                  </span>
-                                ) : (
-                                  serialTags.map((serial) => (
-                                    <button
-                                      key={serial}
-                                      type="button"
-                                      className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
-                                      onClick={() => removeSerialTag(idx, serial)}
-                                    >
-                                      {serial} ×
-                                    </button>
-                                  ))
-                                )}
-                              </div>
-                            </>
-                          ) : (
-                            <Input
-                              value={item.slNo}
-                              onChange={(e) => updateItem(idx, "slNo", e.target.value)}
-                              placeholder="N/A"
-                              disabled
-                            />
-                          )}
+                            {isSerial ? (
+                              <>
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={serialDraftByRow[idx] ?? ""}
+                                    onChange={(e) => setSerialDraft(idx, e.target.value)}
+                                    placeholder="Enter serial no"
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === ",") {
+                                        e.preventDefault();
+                                        addSerialTag(idx);
+                                      }
+                                    }}
+                                  />
+                                  <Button type="button" variant="outline" size="sm" className="h-9 px-3" onClick={() => addSerialTag(idx)}>
+                                    Add
+                                  </Button>
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {serialTags.length === 0 ? (
+                                    <span className="text-xs text-[var(--muted-foreground)]">
+                                      Add serial tags until count matches qty.
+                                    </span>
+                                  ) : (
+                                    serialTags.map((serial) => (
+                                      <button
+                                        key={serial}
+                                        type="button"
+                                        className="rounded-full border border-[var(--border)] bg-[var(--muted)] px-2 py-1 text-xs"
+                                        onClick={() => removeSerialTag(idx, serial)}
+                                      >
+                                        {serial} ×
+                                      </button>
+                                    ))
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <Input
+                                value={item.slNo}
+                                onChange={(e) => updateItem(idx, "slNo", e.target.value)}
+                                placeholder="N/A"
+                                disabled
+                              />
+                            )}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          {idx === 0 && <Label className="text-xs">Expiry</Label>}
-                          <Input
-                            type="date"
-                            value={item.expiryDate}
-                            onChange={(e) => updateItem(idx, "expiryDate", e.target.value)}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {idx === 0 && <Label className="text-xs">Qty</Label>}
-                          <Input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) =>
-                              updateItem(
-                                idx,
-                                "quantity",
-                                isSerial
-                                  ? Math.max(1, Math.round(Number(e.target.value) || 1))
-                                  : Number(e.target.value)
-                              )
-                            }
-                            min={isSerial ? 1 : 0.01}
-                            step={isSerial ? 1 : 0.01}
-                          />
-                          {validationMessage && (
-                            <p className="mt-1 text-xs text-red-600">{validationMessage}</p>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          {idx === 0 && <Label className="text-xs">Rate</Label>}
-                          <Input
-                            type="number"
-                            value={item.rate}
-                            onChange={(e) => updateItem(idx, "rate", Number(e.target.value))}
-                            min={0}
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          {idx === 0 && <Label className="text-xs">GST %</Label>}
-                          <Input
-                            type="number"
-                            value={item.gstPercent}
-                            onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))}
-                            min={0}
-                            max={28}
-                          />
-                        </div>
-                        <div className="min-w-0 pt-1 text-right text-sm font-medium">
-                          {fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}
-                        </div>
-                        <div className="min-w-0">
-                          {items.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeItem(idx)}
-                            >
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
-              <div className="flex items-center justify-between border-t pt-4">
-                <div className="text-lg font-bold">Total: {fmt(calcTotal())}</div>
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Creating..." : "Create Bill"}
+                        <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+                          <div className="min-w-0">
+                            <Label className="text-xs">Expiry</Label>
+                            <Input
+                              type="date"
+                              value={item.expiryDate}
+                              onChange={(e) => updateItem(idx, "expiryDate", e.target.value)}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <Label className="text-xs">Qty</Label>
+                            <Input
+                              type="number"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                updateItem(
+                                  idx,
+                                  "quantity",
+                                  isSerial
+                                    ? Math.max(1, Math.round(Number(e.target.value) || 1))
+                                    : Number(e.target.value)
+                                )
+                              }
+                              min={isSerial ? 1 : 0.01}
+                              step={isSerial ? 1 : 0.01}
+                            />
+                            {validationMessage && (
+                              <p className="mt-1 text-xs text-red-600">{validationMessage}</p>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <Label className="text-xs">Rate</Label>
+                            <Input
+                              type="number"
+                              value={item.rate}
+                              onChange={(e) => updateItem(idx, "rate", Number(e.target.value))}
+                              min={0}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <Label className="text-xs">GST %</Label>
+                            <Input
+                              type="number"
+                              value={item.gstPercent}
+                              onChange={(e) => updateItem(idx, "gstPercent", Number(e.target.value))}
+                              min={0}
+                              max={28}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <Label className="text-xs">Line Total</Label>
+                            <Input
+                              value={fmt(item.quantity * item.rate * (1 + item.gstPercent / 100))}
+                              readOnly
+                              className="text-right font-medium"
+                            />
+                          </div>
+
+                        </div>
+
+
+                      </div>
+                      {items.length > 1 && (
+                        <div style={{margin:"-12px -11px -12px 6px"}} className="w-[10px] flex justify-center items-center h-auto  mt-2  rounded-md border border-input bg-red-500 px-3 py-1 text-sm">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeItem(idx)}
+                            aria-label="Remove item"
+                            className="mt-[-8px]"
+                          >
+                            <Trash2 className="h-4 w-4 text-white text-sm" />
+                          </Button>
+                        </div>
+
+                      )}
+                    </div>
+
+
+
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 -mx-4 -mb-4 border-t border-[var(--border)] bg-[var(--card)] px-4 py-3 flex items-center justify-between gap-2">
+            <div className="text-lg font-bold">Total: {fmt(calcTotal())}</div>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingInvoice(null); }}>Cancel</Button>
+              {!editingInvoice && (
+                <Button type="button" variant="outline" disabled={loading} onClick={saveDraft}>
+                  {loading ? "Saving..." : "Save as Draft"}
                 </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
+              )}
+              {editingInvoice && editingInvoice.status === "DRAFT" && (
+                <Button type="button" variant="outline" disabled={loading} onClick={saveDraftEdit}>
+                  {loading ? "Saving..." : "Save Draft"}
+                </Button>
+              )}
+              <Button type="submit" disabled={loading}>
+                {loading
+                  ? editingInvoice
+                    ? "Saving..."
+                    : "Creating..."
+                  : editingInvoice
+                    ? (editingInvoice.status === "DRAFT" ? "Save as Unpaid" : "Save Bill")
+                    : "Create Bill"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </SideDrawer>
 
       <Card className="mb-4">
         <CardContent className="p-4">
@@ -782,16 +973,18 @@ export default function PurchasesPage() {
             </div>
             <div>
               <Label>Status</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <SimpleSelect
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-              >
-                <option value="">All</option>
-                <option value="UNPAID">Unpaid</option>
-                <option value="PARTIAL">Partial</option>
-                <option value="PAID">Paid</option>
-              </select>
+                onChange={setFilterStatus}
+                placeholder="All"
+                options={[
+                  { value: "", label: "All" },
+                  { value: "DRAFT", label: "Draft" },
+                  { value: "UNPAID", label: "Unpaid" },
+                  { value: "PARTIAL", label: "Partial" },
+                  { value: "PAID", label: "Paid" },
+                ]}
+              />
             </div>
             <div>
               <Label>Vendor</Label>
@@ -813,18 +1006,14 @@ export default function PurchasesPage() {
             </div>
             <div>
               <Label>Facility</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+              <SearchSelect
                 value={filterFacilityId}
-                onChange={(e) => setFilterFacilityId(e.target.value)}
-              >
-                <option value="">All facilities</option>
-                {facilitiesList.map((facility) => (
-                  <option key={facility.id} value={facility.id}>
-                    {facility.name}
-                  </option>
-                ))}
-              </select>
+                displayValue={facilitiesList.find((f) => f.id === filterFacilityId)?.name || ""}
+                endpoint="/api/facilities"
+                placeholder="All facilities"
+                mapResult={(r: { id: string; name: string }) => ({ id: r.id, label: r.name })}
+                onChange={(opt) => setFilterFacilityId(opt?.id ?? "")}
+              />
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -854,7 +1043,8 @@ export default function PurchasesPage() {
 
       <Card>
         <CardContent className="p-0">
-          <Table className="min-w-full table-fixed">
+          <div className="hidden md:block">
+            <Table className="min-w-full table-fixed">
             <colgroup>
               <col className="w-[11rem]" />
               <col className="w-[8rem]" />
@@ -926,6 +1116,24 @@ export default function PurchasesPage() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        title="Edit"
+                        onClick={() => handleEditInvoice(inv)}
+                        disabled={!(inv.status === "DRAFT" || inv.status === "UNPAID")}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Delete"
+                        onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                        disabled={inv.status === "PARTIAL" || inv.status === "PAID"}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         title="Download PDF"
                         onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
                       >
@@ -943,24 +1151,98 @@ export default function PurchasesPage() {
                 </TableRow>
               )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
+
+          <div className="md:hidden p-2 space-y-2">
+            {invoices.map((inv) => (
+              <details key={inv.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                <summary className="list-none cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{inv.invoiceNumber}</div>
+                      <div className="text-xs text-[var(--muted-foreground)]">{new Date(inv.date).toLocaleDateString("en-IN")}</div>
+                      <div className="text-sm text-slate-700 truncate">{inv.vendor?.name || "-"}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="font-semibold">{fmt(inv.totalAmount)}</div>
+                      <div className="mt-1">
+                        <Badge
+                          variant={
+                            inv.status === "PAID"
+                              ? "paid"
+                              : inv.status === "PARTIAL"
+                                ? "partial"
+                                : "unpaid"
+                          }
+                        >
+                          {inv.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                </summary>
+                <div className="mt-3 text-sm">
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div className="text-[var(--muted-foreground)]">Paid<br /><span className="font-medium text-[var(--foreground)]">{fmt(inv.paidAmount)}</span></div>
+                    <div className="text-[var(--muted-foreground)] text-right">Balance<br /><span className="font-medium text-[var(--foreground)]">{fmt(inv.totalAmount - inv.paidAmount)}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="View"
+                      onClick={() => setViewInvoice(inv)}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Edit"
+                      onClick={() => handleEditInvoice(inv)}
+                      disabled={!(inv.status === "DRAFT" || inv.status === "UNPAID")}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Delete"
+                      onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                      disabled={inv.status === "PARTIAL" || inv.status === "PAID"}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Download PDF"
+                      onClick={() => downloadPdf(inv.id, inv.invoiceNumber)}
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </details>
+            ))}
+            {invoices.length === 0 && (
+              <div className="py-6 text-center text-slate-400">No purchase bills yet</div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm">
           <span>Rows per page</span>
-          <select
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
-            value={pageSize}
-            onChange={(e) => setPageSize(Number(e.target.value))}
-          >
-            {[10, 25, 50, 100].map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
+          <div className="w-[96px]">
+            <SimpleSelect
+              value={String(pageSize)}
+              onChange={(v) => setPageSize(Number(v))}
+              options={[5, 10, 25, 50, 100].map((n) => ({ value: String(n), label: String(n) }))}
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button
