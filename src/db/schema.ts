@@ -124,6 +124,37 @@ export const organizationMembers = pgTable(
   ]
 );
 
+export const whatsappAuth = pgTable(
+  "whatsapp_auth",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    companyId: text("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    businessAccountId: text("business_account_id"),
+    phoneNumberId: text("phone_number_id"),
+    catalogId: text("catalog_id"),
+    appId: text("app_id"),
+    appSecret: text("app_secret"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("whatsapp_auth_company_idx").on(table.companyId),
+    uniqueIndex("whatsapp_auth_phone_number_idx").on(table.phoneNumberId),
+  ]
+);
+
+export const whatsappAuthRelations = relations(whatsappAuth, ({ one }) => ({
+  company: one(companies, {
+    fields: [whatsappAuth.companyId],
+    references: [companies.id],
+  }),
+}));
+
 export const companies = pgTable("companies", {
   id: text("id")
     .primaryKey()

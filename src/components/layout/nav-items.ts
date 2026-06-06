@@ -147,6 +147,28 @@ export const navGroups: NavGroup[] = [
         description: "Company, financial-year, and account configuration.",
         icon: "Settings",
       },
+      {
+        href: "/settings/whatsapp",
+        label: "WhatsApp Business",
+        description: "Catalog sync and messaging connectivity.",
+        icon: "MessageCircle",
+        children: [
+          {
+            href: "/settings/whatsapp/test",
+            label: "Test Connection",
+            description: "Verify access token and catalog permissions.",
+            icon: "CheckCircle2",
+            match: "prefix",
+          },
+          {
+            href: "/settings/whatsapp/catalog",
+            label: "Sync Catalogue",
+            description: "Push products to Commerce Manager.",
+            icon: "ShoppingBag",
+            match: "prefix",
+          },
+        ],
+      },
     ],
   },
 ];

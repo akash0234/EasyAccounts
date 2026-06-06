@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { CalendarDays, LogOut, Menu, Search } from "lucide-react";
@@ -13,15 +13,15 @@ export function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const page = getPageMeta(pathname);
-  const todayLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-IN", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-      }).format(new Date()),
-    []
-  );
+  const [todayLabel, setTodayLabel] = useState("");
+  useEffect(() => {
+    const formatted = new Intl.DateTimeFormat("en-IN", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+    }).format(new Date());
+    setTodayLabel(formatted);
+  }, []);
   const initials = getInitials(session?.user?.name);
 
   return (
