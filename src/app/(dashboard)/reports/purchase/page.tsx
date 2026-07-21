@@ -375,6 +375,7 @@ export default function PurchaseReportPage() {
       ) : (
         <Card>
           <CardContent className="p-0">
+            <div className="hidden md:block">
             <Table className="min-w-[70rem] table-fixed">
               <colgroup>
                 <col className="w-[7rem]" />
@@ -444,6 +445,42 @@ export default function PurchaseReportPage() {
                 )}
               </TableBody>
             </Table>
+            </div>
+
+            <div className="md:hidden p-2 space-y-2">
+              {paginatedRows.map((r) => (
+                <details key={r.id} className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-sm">
+                  <summary className="list-none cursor-pointer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{r.vendor?.name ?? "—"}</div>
+                        <div className="text-xs text-slate-500">{formatDate(r.date)} · {r.invoiceNumber}</div>
+                        <div className="text-xs text-slate-500">{r.facility?.name ?? "—"}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="font-semibold">{formatINR(r.totalAmount)}</div>
+                      </div>
+                    </div>
+                  </summary>
+                  <div className="mt-3 text-sm">
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <div>
+                        <div className="text-[var(--muted-foreground)]">Paid</div>
+                        <div className="font-medium text-[var(--foreground)]">{formatINR(r.paidAmount)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[var(--muted-foreground)]">Payable</div>
+                        <div className="font-medium text-[var(--foreground)]">{formatINR(r.outstanding)}</div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-slate-500">Status: <span className="font-medium">{r.status}</span></div>
+                  </div>
+                </details>
+              ))}
+              {rows.length === 0 && (
+                <div className="py-10 text-center text-sm text-slate-500">{loading ? "Loading…" : "No bills match the current filters."}</div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

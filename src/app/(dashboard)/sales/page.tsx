@@ -1414,8 +1414,8 @@ export default function SalesPage() {
 
       <Card className="mb-4">
         <CardContent className="p-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-7">
-            <div className="xl:col-span-2">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-7">
+            <div className="col-span-2 xl:col-span-2">
               <Label>Search</Label>
               <Input
                 value={search}
