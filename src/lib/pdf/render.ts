@@ -15,7 +15,9 @@ const defaultPdfOptions: PDFOptions = {
   format: "A4",
   printBackground: true,
   preferCSSPageSize: true,
-  margin: { top: "12mm", right: "12mm", bottom: "14mm", left: "12mm" },
+  // Slightly tighter margins; combined with in-document padding
+  // this yields a compact but safe printable area.
+  margin: { top: "8mm", right: "8mm", bottom: "10mm", left: "8mm" },
 };
 
 /**

@@ -30,6 +30,8 @@ export function SimpleSelect({
 }: SimpleSelectProps) {
   const [open, setOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<"top" | "bottom">("bottom");
   const selected = options.find((o) => o.value === value);
 
   useEffect(() => {
@@ -40,6 +42,31 @@ export function SimpleSelect({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function updatePlacement() {
+      const el = inputRef.current;
+      const menu = menuRef.current;
+      if (!el || !menu) return;
+      const rect = el.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const menuHeight = menu.getBoundingClientRect().height;
+      const spaceBelow = viewportHeight - rect.bottom - 8;
+      const spaceAbove = rect.top - 8;
+      if (spaceBelow < menuHeight && spaceAbove >= menuHeight) setPlacement("top");
+      else setPlacement("bottom");
+    }
+    updatePlacement();
+    const onResize = () => updatePlacement();
+    const onScroll = () => updatePlacement();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, options.length]);
 
   function handleSelect(v: string) {
     onChange(v);
@@ -78,7 +105,12 @@ export function SimpleSelect({
         </button>
       )}
       {open && (
-        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
+        <div
+          ref={menuRef}
+          className={`absolute z-30 left-0 ${
+            placement === "bottom" ? "mt-1 top-full" : "mb-1 bottom-full"
+          } max-h-56 w-full overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md`}
+        >
           {options.map((opt) => (
             <button
               key={opt.value}

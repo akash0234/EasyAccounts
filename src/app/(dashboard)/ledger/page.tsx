@@ -188,7 +188,7 @@ export default function LedgerPage() {
                     </div>
                   </summary>
                   <div className="mt-3 text-sm">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-2 mb-3">
                       <div>
                         <div className="text-[var(--muted-foreground)]">Debit</div>
                         <div className="font-medium text-rubick-danger">{e.debit > 0 ? fmt(e.debit) : "-"}</div>
