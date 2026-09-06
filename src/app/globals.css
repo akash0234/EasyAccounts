@@ -222,7 +222,7 @@ body {
 }
 
 .table-report th {
-  @apply border-b-0 text-left px-3 py-2 font-medium text-white! text-xs uppercase tracking-wide;
+  @apply border-b-0 text-left px-3 py-2 font-medium  text-xs uppercase tracking-wide;
 }
 
 .table-report td {
