@@ -331,7 +331,7 @@ body {
 }
 
 .rubick-page {
-  @apply flex flex-1 min-h-0 flex-col gap-6 overflow-y-auto overflow-x-hidden py-6 max-h-[calc(100vh-135px)];
+  @apply flex flex-1 min-h-0 flex-col gap-6 overflow-y-auto overflow-x-hidden py-6 max-h-[calc(100vh-155px)];
 }
 
 .rubick-drawer-open .appearance-switcher {
